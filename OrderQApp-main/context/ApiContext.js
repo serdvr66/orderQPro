@@ -1,4 +1,4 @@
-// context/ApiContext.js - Debug Version mit umfassendem Logging
+// context/ApiContext.js - Erweitert um Kellner-Funktionen
 import { createContext, useContext } from 'react';
 import { useAuth } from './AuthContext';
 
@@ -14,8 +14,9 @@ export const useApi = () => {
 
 export const ApiProvider = ({ children }) => {
   const { token } = useAuth();
-  const BASE_URL = 'https://www.orderq.de/api';
-//const BASE_URL = 'https://staging.orderq.de/api'
+//  const BASE_URL = 'https://www.orderq.de/api';
+const BASE_URL = 'https://staging.orderq.de/api'
+
   const apiCall = async (endpoint, options = {}) => {
     const url = `${BASE_URL}${endpoint}`;
     const headers = {
@@ -76,6 +77,7 @@ export const ApiProvider = ({ children }) => {
     }
   };
 
+  // ========== BESTEHENDE METHODEN ==========
   const login = async (email, password) => {
     console.log('🔐 Login attempt for:', email);
     return apiCall('/login', {
@@ -116,7 +118,53 @@ export const ApiProvider = ({ children }) => {
     return apiCall('/order-histories');
   };
 
-  // ✅ PUSH-TOKEN METHODEN MIT UMFASSENDEM DEBUGGING
+  // ========== NEUE KELLNER METHODEN ==========
+  
+  // Alle Tische für Kellner abrufen
+  const getAllTables = async () => {
+    console.log('🍽️ Fetching all tables for waiter...');
+    return apiCall('/tables');
+  };
+
+  // Menü mit Kategorien und Items abrufen
+  const getMenuForWaiter = async () => {
+    console.log('📋 Fetching menu for waiter...');
+    return apiCall('/menu');
+  };
+
+  // Details eines spezifischen Tisches
+  const getTableDetails = async (tableCode) => {
+    console.log('🏷️ Fetching table details for:', tableCode);
+    return apiCall(`/table/${tableCode}/details`);
+  };
+
+  // Neue Table Session starten
+  const startTableSession = async (tableCode) => {
+    console.log('🚀 Starting table session for:', tableCode);
+    return apiCall('/table/start-session', {
+      method: 'POST',
+      body: JSON.stringify({ table_code: tableCode }),
+    });
+  };
+
+  // Bestellung aufgeben (Kellner-Version)
+  const placeWaiterOrder = async (tableCode, cartData, note = null) => {
+    console.log('🛎️ Placing waiter order for table:', tableCode);
+    console.log('🛒 Cart data:', cartData);
+    console.log('📝 Note:', note);
+    
+    return apiCall('/order/place', {
+      method: 'POST',
+      body: JSON.stringify({
+        table_code: tableCode,
+        cart: cartData,
+        note: note,
+        placed_by_staff: true // Markierung als Staff-Bestellung
+      }),
+    });
+  };
+
+  // ========== PUSH-TOKEN METHODEN ==========
   
   const registerPushToken = async (token, companyId, platform = 'ios', deviceId = null) => {
     console.log('🔥 === REGISTER PUSH TOKEN START ===');
@@ -314,12 +362,19 @@ export const ApiProvider = ({ children }) => {
     completeAllOrders,
     getTables,
     getDashboardStats,
-    getAllOrderHistories,
+    getAllOrderHistories, 
     registerPushToken,
     unregisterPushToken,
     testPushNotification,
     getPushTokens,
     debugPushTokenSystem,
+    
+    // Neue Kellner-Methoden
+    getAllTables,
+    getMenuForWaiter,
+    getTableDetails,
+    startTableSession,
+    placeWaiterOrder,
   };
 
   return (

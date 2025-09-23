@@ -1,4 +1,4 @@
-// app/(tabs)/_layout.tsx
+// app/(tabs)/_layout.tsx - Mit neuem Kellner-Tab
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 
@@ -20,6 +20,18 @@ export default function TabLayout() {
           ),
         }}
       />
+      
+      {/* NEUER KELLNER TAB */}
+      <Tabs.Screen
+        name="kellner"
+        options={{
+          title: 'Kellner',
+          tabBarIcon: ({ color }) => (
+            <Ionicons name="restaurant" size={24} color={color} />
+          ),
+        }}
+      />
+      
       <Tabs.Screen
         name="settings"
         options={{
