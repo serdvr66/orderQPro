@@ -27,27 +27,18 @@ const BASE_URL = 'https://staging.orderq.de/api'
 
     if (token) {
       headers.Authorization = `Bearer ${token}`;
-      console.log('🔑 Sending request with token to:', endpoint);
-      console.log('🔑 Token preview:', `${token.substring(0, 20)}...`);
     } else {
-      console.log('❌ No auth token available for:', endpoint);
-      console.log('API Warning: No auth token for:', endpoint);
     }
 
     try {
-      console.log('📡 === API CALL START ===');
-      console.log('📡 URL:', url);
-      console.log('📡 Method:', options.method || 'GET');
-      console.log('📡 Headers:', headers);
-      console.log('📡 Body:', options.body || 'No body');
+   
       
       const response = await fetch(url, {
         ...options,
         headers,
       });
 
-      console.log('📥 Response status:', response.status);
-      console.log('📥 Response ok:', response.ok);
+   
 
       const data = await response.json();
       console.log('📥 Response data:', data);
@@ -59,7 +50,6 @@ const BASE_URL = 'https://staging.orderq.de/api'
           data: data
         });
         
-        console.log('API Error:', `${response.status}: ${data.message || data.error || 'Unknown error'}`);
         throw new Error(data.message || data.error || 'API Error');
       }
 
@@ -67,10 +57,7 @@ const BASE_URL = 'https://staging.orderq.de/api'
       return data;
       
     } catch (error) {
-      console.error('💥 === API CALL FAILED ===');
-      console.error('💥 Error details:', error);
-      console.error('💥 Error message:', error.message);
-      console.error('💥 Error stack:', error.stack);
+  
       
       console.log('Network Error: API call failed:', error.message);
       throw error;
@@ -79,7 +66,6 @@ const BASE_URL = 'https://staging.orderq.de/api'
 
   // ========== BESTEHENDE METHODEN ==========
   const login = async (email, password) => {
-    console.log('🔐 Login attempt for:', email);
     return apiCall('/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
