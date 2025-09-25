@@ -1,7 +1,10 @@
-// app/(tabs)/kellner.tsx - Mit Smart Item Selection
+// Korrigierte Imports - Zeilen 1-18
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
+import { PanGestureHandlerGestureEvent } from 'react-native-gesture-handler';
+
+
 import {
   ActivityIndicator,
   Alert,
@@ -13,7 +16,9 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Dimensions,
 } from 'react-native';
+import { PanGestureHandler, State as GestureState } from 'react-native-gesture-handler';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApi } from '../../context/ApiContext';
 import { useAuth } from '../../context/AuthContext';
@@ -87,6 +92,8 @@ interface SelectedConfiguration {
   [configTitle: string]: string | string[];
 }
 
+const { height: screenHeight } = Dimensions.get('window');
+
 export default function KellnerScreen() {
   // Loading States
   const [isLoading, setIsLoading] = useState(false);
@@ -101,7 +108,11 @@ export default function KellnerScreen() {
   const [cart, setCart] = useState<CartItem[]>([]);
   
   // UI States
+  const [initialCartHeight, setInitialCartHeight] = useState(0.3);
+
+
   const [showOrderInterface, setShowOrderInterface] = useState(false);
+  const [cartHeight, setCartHeight] = useState(0.3); // Default: 30% of screen
   
   // Modal States
   const [showItemModal, setShowItemModal] = useState(false);
@@ -212,6 +223,49 @@ export default function KellnerScreen() {
     
     // Sort by order
     return processed.sort((a, b) => (a.order || 0) - (b.order || 0));
+  };
+
+  // Handle drag gesture for cart resize
+const handleCartDrag = (event: PanGestureHandlerGestureEvent) => {
+  const { translationY, state } = event.nativeEvent;
+  
+  if (state === GestureState.BEGAN) {
+    // Speichere die initiale Höhe beim Start des Drags
+    setInitialCartHeight(cartHeight);
+    return;
+  }
+  
+  if (state === GestureState.ACTIVE) {
+    const topBarHeight = 60;
+    const categoryHeight = 50;
+    const availableHeight = screenHeight - topBarHeight - categoryHeight;
+    
+    // Berechne die neue Höhe basierend auf der initialen Höhe + Translation
+    const initialPixelHeight = initialCartHeight * availableHeight;
+    const newPixelHeight = Math.max(
+      availableHeight * 0.15, // Minimum 15%
+      Math.min(
+        availableHeight * 0.8, // Maximum 80%
+        initialPixelHeight - translationY // Subtrahiere translationY (nach oben = negativ)
+      )
+    );
+    
+    const newRatio = newPixelHeight / availableHeight;
+    setCartHeight(newRatio);
+  }
+};
+
+  // Snap cart to predefined sizes
+  const snapCartHeight = () => {
+    if (cartHeight < 0.25) {
+      setCartHeight(0.2); // Small
+    } else if (cartHeight < 0.45) {
+      setCartHeight(0.35); // Medium
+    } else if (cartHeight < 0.65) {
+      setCartHeight(0.5); // Large
+    } else {
+      setCartHeight(0.7); // Extra Large
+    }
   };
 
   // NEW: Direktes Hinzufügen ohne Modal
@@ -616,8 +670,10 @@ export default function KellnerScreen() {
     setSelectedCategory(null);
   };
 
-  // Order Interface (Orderman Style)
+  // Order Interface (Orderman Style) mit verschiebbarem Warenkorb
   if (showOrderInterface && selectedTable) {
+    const itemsHeight = 1 - cartHeight; // Rest of available space for items
+    
     return (
       <SafeAreaView style={styles.container}>
         {/* Top Bar - Cart Summary */}
@@ -670,8 +726,8 @@ export default function KellnerScreen() {
               </ScrollView>
             </View>
 
-            {/* Items List - Now takes up 60% of screen */}
-            <View style={styles.itemsContainer}>
+            {/* Items List - Dynamic height based on cart height */}
+            <View style={[styles.itemsContainer, { flex: itemsHeight }]}>
               {selectedCategory && (
                 <FlatList
                   data={selectedCategory.items}
@@ -742,10 +798,27 @@ export default function KellnerScreen() {
               )}
             </View>
 
-            {/* NEW: Live Cart Section - Takes up 40% of screen */}
-            <View style={styles.cartSection}>
+            {/* NEW: Resizable Cart Section with Drag Handle */}
+            <View style={[styles.cartSection, { flex: cartHeight }]}>
+              {/* Drag Handle */}
+              <PanGestureHandler
+                onGestureEvent={handleCartDrag}
+                onHandlerStateChange={(event) => {
+                  if (event.nativeEvent.state === 5) { // ENDED
+                    snapCartHeight();
+                  }
+                }}
+              >
+                <View style={styles.dragHandle}>
+                  <View style={styles.dragHandleBar} />
+                  <Text style={styles.dragHandleText}>
+                    Warenkorb {cartHeight < 0.25 ? '(Klein)' : cartHeight < 0.45 ? '(Mittel)' : cartHeight < 0.65 ? '(Groß)' : '(Extra Groß)'}
+                  </Text>
+                </View>
+              </PanGestureHandler>
+
               <View style={styles.cartHeader}>
-                <Text style={styles.cartHeaderTitle}>Warenkorb</Text>
+                <Text style={styles.cartHeaderTitle}>Bestellung</Text>
                 <View style={styles.cartHeaderSummary}>
                   <Text style={styles.cartHeaderTotal}>{getCartTotal().toFixed(2)} €</Text>
                   <Text style={styles.cartHeaderCount}>({getCartItemCount()} Items)</Text>
@@ -1249,9 +1322,8 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
 
-  // Items
+  // Items - Dynamic height
   itemsContainer: {
-    flex: 0.6, // Takes 60% of available space
     backgroundColor: '#ffffff',
     paddingHorizontal: 8,
     paddingTop: 8,
@@ -1354,12 +1426,31 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // Live Cart Section
+  // NEW: Resizable Cart Section with Drag Handle
   cartSection: {
-    flex: 0.4, // Takes 40% of available space
     backgroundColor: '#f8fafc',
     borderTopWidth: 2,
     borderTopColor: '#e2e8f0',
+  },
+ dragHandle: {
+  backgroundColor: '#ffffff',
+  alignItems: 'center',
+  paddingVertical: 8,
+  borderBottomWidth: 1,
+  borderBottomColor: '#e5e7eb',
+  // cursor: 'grab', // Diese Zeile entfernen - nicht verfügbar in React Native
+},
+  dragHandleBar: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#9ca3af',
+    borderRadius: 2,
+    marginBottom: 4,
+  },
+  dragHandleText: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontWeight: '500',
   },
   cartHeader: {
     backgroundColor: '#ffffff',
@@ -1406,79 +1497,79 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
-    minHeight: 60, // Kleiner: war vorher implizit ~80px
+    minHeight: 60,
   },
   cartItemMain: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 8, // Kleiner: war 12
+    padding: 8,
   },
   cartItemInfo: {
     flex: 1,
-    marginRight: 8, // Kleiner: war 12
+    marginRight: 8,
   },
   cartItemTitle: {
-    fontSize: 13, // Kleiner: war 14
+    fontSize: 13,
     fontWeight: '600',
     color: '#1f2937',
     marginBottom: 2,
   },
   cartItemConfigs: {
-    marginTop: 1, // Kleiner: war 2
+    marginTop: 1,
   },
   cartItemConfigText: {
-    fontSize: 10, // Kleiner: war 11
+    fontSize: 10,
     color: '#6b7280',
     fontStyle: 'italic',
   },
   cartItemNote: {
-    fontSize: 10, // Kleiner: war 11
+    fontSize: 10,
     color: '#f59e0b',
     fontStyle: 'italic',
-    marginTop: 1, // Kleiner: war 2
+    marginTop: 1,
   },
   cartItemControls: {
     alignItems: 'flex-end',
   },
   cartItemPrice: {
-    fontSize: 13, // Kleiner: war 14
+    fontSize: 13,
     fontWeight: 'bold',
     color: '#007AFF',
-    marginBottom: 3, // Kleiner: war 4
+    marginBottom: 3,
   },
   cartItemQuantityControls: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f3f4f6',
-    borderRadius: 4, // Kleiner: war 6
-    padding: 1, // Kleiner: war 2
+    borderRadius: 4,
+    padding: 1,
   },
   cartQuantityButton: {
     backgroundColor: '#ffffff',
-    width: 24, // Kleiner: war 28
-    height: 24, // Kleiner: war 28
-    borderRadius: 3, // Kleiner: war 4
+    width: 24,
+    height: 24,
+    borderRadius: 3,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#e5e7eb',
   },
   cartQuantityButtonText: {
-    fontSize: 12, // Kleiner: war 14
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#374151',
   },
   cartQuantityDisplay: {
-    fontSize: 12, // Kleiner: war 14
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#1f2937',
-    marginHorizontal: 8, // Kleiner: war 12
-    minWidth: 16, // Kleiner: war 20
+    marginHorizontal: 8,
+    minWidth: 16,
     textAlign: 'center',
   },
   cartItemRemove: {
-    padding: 8, // Kleiner: war 12
+    padding: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1511,16 +1602,6 @@ const styles = StyleSheet.create({
   },
   disabledButtonText: {
     color: '#9ca3af',
-  },
-
-  // Bottom Bar (Updated)
-  bottomBar: {
-    backgroundColor: '#ffffff',
-    flexDirection: 'row',
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-    gap: 12,
   },
   clearCartButton: {
     backgroundColor: '#ef4444',
