@@ -1,4 +1,4 @@
-// context/ApiContext.js - Erweitert um Kellner-Funktionen
+// context/ApiContext.js - Erweitert um Kellner-Funktionen und Abrechnung
 import { createContext, useContext } from 'react';
 import { useAuth } from './AuthContext';
 
@@ -104,7 +104,7 @@ const BASE_URL = 'https://staging.orderq.de/api'
     return apiCall('/order-histories');
   };
 
-  // ========== NEUE KELLNER METHODEN ==========
+  // ========== KELLNER METHODEN ==========
   
   // Alle Tische für Kellner abrufen
   const getAllTables = async () => {
@@ -146,6 +146,69 @@ const BASE_URL = 'https://staging.orderq.de/api'
         cart: cartData,
         note: note,
         placed_by_staff: true // Markierung als Staff-Bestellung
+      }),
+    });
+  };
+
+  // ========== NEUE ABRECHNUNGS-METHODEN ==========
+  
+  // Abrechnungsdaten für einen Tisch abrufen
+  const getTableBilling = async (tableCode) => {
+    console.log('💰 Fetching billing data for table:', tableCode);
+    return apiCall(`/table/${tableCode}/billing`);
+  };
+
+  // Item Bezahlstatus umschalten (bezahlt <-> unbezahlt)
+  const toggleItemPaid = async (itemUuid) => {
+    console.log('💳 Toggling payment status for item:', itemUuid);
+    return apiCall(`/item/${itemUuid}/toggle-paid`, {
+      method: 'POST',
+    });
+  };
+
+  // Item stornieren
+  const cancelItem = async (itemUuid) => {
+    console.log('❌ Cancelling item:', itemUuid);
+    return apiCall(`/item/${itemUuid}/cancel`, {
+      method: 'POST',
+    });
+  };
+
+  // Komplette Session bezahlen
+  const paySession = async (tableCode) => {
+    console.log('💰 Processing payment for table session:', tableCode);
+    return apiCall(`/session/${tableCode}/pay`, {
+      method: 'POST',
+    });
+  };
+
+  // Session beenden
+  const endSession = async (tableCode) => {
+    console.log('🔚 Ending table session:', tableCode);
+    return apiCall(`/session/${tableCode}/end`, {
+      method: 'POST',
+    });
+  };
+
+  // Mehrere Items auf einmal bezahlen
+  const bulkPayItems = async (itemIds) => {
+    console.log('💳 Bulk paying items:', itemIds);
+    return apiCall('/items/bulk-pay', {
+      method: 'POST',
+      body: JSON.stringify({
+        item_ids: itemIds,
+      }),
+    });
+  };
+
+  // Bestellung zu anderem Tisch verschieben
+  const moveOrder = async (sourceTableCode, targetTableCode, itemIds = null) => {
+    console.log('🚚 Moving order from', sourceTableCode, 'to', targetTableCode);
+    return apiCall(`/orders/${sourceTableCode}/move`, {
+      method: 'POST',
+      body: JSON.stringify({
+        table_code: targetTableCode,
+        item_ids: itemIds, // Optional: nur bestimmte Items verschieben
       }),
     });
   };
@@ -341,6 +404,7 @@ const BASE_URL = 'https://staging.orderq.de/api'
   };
 
   const value = {
+    // Bestehende Methoden
     login,
     getOrders,
     fetchOrders,
@@ -355,12 +419,21 @@ const BASE_URL = 'https://staging.orderq.de/api'
     getPushTokens,
     debugPushTokenSystem,
     
-    // Neue Kellner-Methoden
+    // Kellner-Methoden
     getAllTables,
     getMenuForWaiter,
     getTableDetails,
     startTableSession,
     placeWaiterOrder,
+    
+    // Neue Abrechnungs-Methoden
+    getTableBilling,
+    toggleItemPaid,
+    cancelItem,
+    paySession,
+    endSession,
+    bulkPayItems,
+    moveOrder,
   };
 
   return (

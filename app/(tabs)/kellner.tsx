@@ -1,4 +1,4 @@
-// app/(tabs)/kellner.tsx - Mit Smart Item Selection
+// app/(tabs)/kellner.tsx - Mit Tab Navigation für Bestellen und Rechnung
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -87,10 +87,52 @@ interface SelectedConfiguration {
   [configTitle: string]: string | string[];
 }
 
+// Neue Interfaces für Abrechnung
+interface BillingItem {
+  uuid: string;
+  title: string;
+  category: string;
+  price: number;
+  quantity: number;
+  subtotal: number;
+  status: string;
+  is_paid: boolean;
+  is_added_by_staff: boolean;
+  configurations?: any;
+  created_at: string;
+}
+
+interface Customer {
+  session_id: number;
+  customer_number: number;
+  items: BillingItem[];
+  session_revenue: number;
+}
+
+interface BillingData {
+  table: {
+    id: number;
+    code: string;
+    name: string;
+  };
+  customers: Customer[];
+  totals: {
+    total_amount: number;
+    paid_amount: number;
+    pending_amount: number;
+  };
+  available_tables: Array<{
+    id: number;
+    code: string;
+    name: string;
+  }>;
+}
+
 export default function KellnerScreen() {
   // Loading States
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMenu, setIsLoadingMenu] = useState(false);
+  const [isLoadingBilling, setIsLoadingBilling] = useState(false);
   
   // Data States
   const [tables, setTables] = useState<Table[]>([]);
@@ -100,8 +142,13 @@ export default function KellnerScreen() {
   const [selectedCategory, setSelectedCategory] = useState<MenuCategory | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   
+  // Billing Data
+  const [billingData, setBillingData] = useState<BillingData | null>(null);
+  const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  
   // UI States
   const [showOrderInterface, setShowOrderInterface] = useState(false);
+  const [activeTab, setActiveTab] = useState<'order' | 'billing'>('order'); // Neue Tab-State
   
   // Modal States
   const [showItemModal, setShowItemModal] = useState(false);
@@ -111,8 +158,19 @@ export default function KellnerScreen() {
   const [selectedConfigurations, setSelectedConfigurations] = useState<SelectedConfiguration>({});
   const [modalTotalPrice, setModalTotalPrice] = useState(0);
 
-  // API Hooks
-  const { getAllTables, getMenuForWaiter, placeWaiterOrder } = useApi();
+  // API Hooks - Erweitert mit Billing-Funktionen
+  const { 
+    getAllTables, 
+    getMenuForWaiter, 
+    placeWaiterOrder,
+    getTableBilling,
+    toggleItemPaid,
+    cancelItem,
+    paySession,
+    endSession,
+    bulkPayItems,
+    moveOrder
+  } = useApi();
   const { isAuthenticated, user } = useAuth();
 
   // Auth Guard
@@ -171,6 +229,7 @@ export default function KellnerScreen() {
         }
         
         setShowOrderInterface(true);
+        setActiveTab('order'); // Start auf Bestellen-Tab
       } else {
         throw new Error('Keine Menü-Daten erhalten');
       }
@@ -181,6 +240,169 @@ export default function KellnerScreen() {
     } finally {
       setIsLoadingMenu(false);
     }
+  };
+
+  // Neue Funktion: Billing-Daten laden
+  const loadBillingData = async () => {
+    if (!selectedTable) return;
+    
+    setIsLoadingBilling(true);
+    try {
+      const response = await getTableBilling(selectedTable.code);
+      if (response && response.success) {
+        setBillingData(response.data);
+      } else {
+        Alert.alert('Fehler', 'Abrechnungsdaten konnten nicht geladen werden');
+      }
+    } catch (error: any) {
+      console.error('Error loading billing data:', error);
+      Alert.alert('Fehler', 'Abrechnungsdaten konnten nicht geladen werden');
+    } finally {
+      setIsLoadingBilling(false);
+    }
+  };
+
+  // Tab-Wechsel Handler
+  const handleTabChange = (tab: 'order' | 'billing') => {
+    setActiveTab(tab);
+    if (tab === 'billing') {
+      loadBillingData();
+    }
+  };
+
+  // Billing-Funktionen
+  const handleToggleItemPaid = async (itemUuid: string) => {
+    try {
+      const response = await toggleItemPaid(itemUuid);
+      if (response && response.success) {
+        // Billing-Daten neu laden
+        loadBillingData();
+      } else {
+        Alert.alert('Fehler', 'Status konnte nicht geändert werden');
+      }
+    } catch (error: any) {
+      console.error('Error toggling payment:', error);
+      Alert.alert('Fehler', 'Status konnte nicht geändert werden');
+    }
+  };
+
+  const handleCancelItem = async (itemUuid: string) => {
+    Alert.alert(
+      'Item stornieren',
+      'Sind Sie sicher, dass Sie dieses Item stornieren möchten?',
+      [
+        { text: 'Abbrechen', style: 'cancel' },
+        {
+          text: 'Stornieren',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await cancelItem(itemUuid);
+              if (response && response.success) {
+                loadBillingData();
+              } else {
+                Alert.alert('Fehler', 'Item konnte nicht storniert werden');
+              }
+            } catch (error: any) {
+              console.error('Error cancelling item:', error);
+              Alert.alert('Fehler', 'Item konnte nicht storniert werden');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handlePaySession = async () => {
+    if (!selectedTable) return;
+    
+    Alert.alert(
+      'Session bezahlen',
+      'Alle Items als bezahlt markieren?',
+      [
+        { text: 'Abbrechen', style: 'cancel' },
+        {
+          text: 'Bezahlen',
+          onPress: async () => {
+            try {
+              const response = await paySession(selectedTable.code);
+              if (response && response.success) {
+                loadBillingData();
+                Alert.alert('Erfolg', 'Session wurde bezahlt');
+              } else {
+                Alert.alert('Fehler', 'Session konnte nicht bezahlt werden');
+              }
+            } catch (error: any) {
+              console.error('Error paying session:', error);
+              Alert.alert('Fehler', 'Session konnte nicht bezahlt werden');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleEndSession = async () => {
+    if (!selectedTable) return;
+    
+    Alert.alert(
+      'Session beenden',
+      'Session beenden und Tisch freigeben?',
+      [
+        { text: 'Abbrechen', style: 'cancel' },
+        {
+          text: 'Beenden',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await endSession(selectedTable.code);
+              if (response && response.success) {
+                Alert.alert('Erfolg', 'Session wurde beendet');
+                handleBackToTables();
+              } else {
+                Alert.alert('Fehler', 'Session konnte nicht beendet werden');
+              }
+            } catch (error: any) {
+              console.error('Error ending session:', error);
+              Alert.alert('Fehler', 'Session konnte nicht beendet werden');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleBulkPayItems = async () => {
+    if (selectedItems.length === 0) {
+      Alert.alert('Hinweis', 'Bitte wählen Sie Items aus');
+      return;
+    }
+    
+    Alert.alert(
+      'Ausgewählte Items bezahlen',
+      `${selectedItems.length} Items als bezahlt markieren?`,
+      [
+        { text: 'Abbrechen', style: 'cancel' },
+        {
+          text: 'Bezahlen',
+          onPress: async () => {
+            try {
+              const response = await bulkPayItems(selectedItems);
+              if (response && response.success) {
+                setSelectedItems([]);
+                loadBillingData();
+                Alert.alert('Erfolg', 'Items wurden bezahlt');
+              } else {
+                Alert.alert('Fehler', 'Items konnten nicht bezahlt werden');
+              }
+            } catch (error: any) {
+              console.error('Error bulk paying items:', error);
+              Alert.alert('Fehler', 'Items konnten nicht bezahlt werden');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const processMenuCategories = (categories: MenuCategory[]): MenuCategory[] => {
@@ -214,19 +436,17 @@ export default function KellnerScreen() {
     return processed.sort((a, b) => (a.order || 0) - (b.order || 0));
   };
 
-  // NEW: Direktes Hinzufügen ohne Modal
+  // BESTEHENDE ORDER-FUNKTIONEN (unverändert)
   const addItemDirectly = (item: MenuItem) => {
     const basePrice = Number(item.price) || 0;
     let configPriceChange = 0;
     const defaultConfigurations: SelectedConfiguration = {};
 
-    // Standard-Konfigurationen anwenden (preselected oder erste Option)
     if (item.item_configurations) {
       item.item_configurations.forEach(config => {
         const options = config.configuration_options || [];
         
         if (config.type === 'single') {
-          // Preselected oder erste Option für Single-Choice
           const preselected = options.find(opt => opt.preselected);
           const defaultOption = preselected || options[0];
           
@@ -235,7 +455,6 @@ export default function KellnerScreen() {
             configPriceChange += Number(defaultOption.price_change) || 0;
           }
         } else if (config.type === 'multiple') {
-          // Nur preselected Options für Multiple-Choice
           const preselected = options
             .filter(opt => opt.preselected)
             .map(opt => {
@@ -254,24 +473,20 @@ export default function KellnerScreen() {
 
     const finalPrice = basePrice + configPriceChange;
     
-    // FIXED: Suche nach identischem Item (gleiche Konfigurationen, keine Notiz)
     const existingItemIndex = cart.findIndex(cartItem => {
-      // Extract original UUID from cart item
       const cartItemOriginalUuid = cartItem.uuid.split('-{')[0];
       
       return cartItemOriginalUuid === item.uuid &&
         JSON.stringify(cartItem.configurations || {}) === JSON.stringify(defaultConfigurations) &&
-        !cartItem.specialNote; // Keine Notiz
+        !cartItem.specialNote;
     });
     
     if (existingItemIndex >= 0) {
-      // Menge erhöhen bei identischem Item
       const updatedCart = [...cart];
       updatedCart[existingItemIndex].quantity += 1;
       updatedCart[existingItemIndex].total = updatedCart[existingItemIndex].quantity * finalPrice;
       setCart(updatedCart);
     } else {
-      // Neues Item hinzufügen
       const cartItemId = `${item.uuid}-${JSON.stringify(defaultConfigurations)}-${Date.now()}`;
       const newItem: CartItem = {
         uuid: cartItemId,
@@ -292,12 +507,10 @@ export default function KellnerScreen() {
     setSpecialNote('');
     setSelectedConfigurations({});
     
-    // Initialize configurations with preselected values
     if (item.item_configurations) {
       const initialConfigs: SelectedConfiguration = {};
       item.item_configurations.forEach(config => {
         if (config.type === 'single') {
-          // Find preselected option or first option
           const options = config.configuration_options || [];
           const preselected = options.find(opt => opt.preselected);
           const firstOption = options[0];
@@ -307,7 +520,6 @@ export default function KellnerScreen() {
             initialConfigs[config.title] = firstOption.title;
           }
         } else {
-          // Multiple selection - array of preselected options
           const options = config.configuration_options || [];
           const preselected = options
             .filter(opt => opt.preselected)
@@ -322,7 +534,6 @@ export default function KellnerScreen() {
       setSelectedConfigurations(initialConfigs);
     }
     
-    // Calculate initial price
     calculateModalPrice(item, 1, {});
     setShowItemModal(true);
   };
@@ -386,7 +597,6 @@ export default function KellnerScreen() {
     const basePrice = Number(selectedItem.price) || 0;
     let configPriceChange = 0;
 
-    // Calculate configuration price change
     if (selectedItem.item_configurations) {
       selectedItem.item_configurations.forEach(config => {
         const selectedValue = selectedConfigurations[config.title];
@@ -405,8 +615,6 @@ export default function KellnerScreen() {
     }
 
     const finalPrice = basePrice + configPriceChange;
-    
-    // Create unique identifier for cart item (including configurations)
     const cartItemId = `${selectedItem.uuid}-${JSON.stringify(selectedConfigurations)}-${specialNote}`;
     
     const existingItemIndex = cart.findIndex(cartItem => 
@@ -416,13 +624,11 @@ export default function KellnerScreen() {
     );
     
     if (existingItemIndex >= 0) {
-      // Update existing item
       const updatedCart = [...cart];
       updatedCart[existingItemIndex].quantity += modalQuantity;
       updatedCart[existingItemIndex].total = updatedCart[existingItemIndex].quantity * finalPrice;
       setCart(updatedCart);
     } else {
-      // Add new item
       const newItem: CartItem = {
         uuid: cartItemId,
         title: selectedItem.title,
@@ -445,12 +651,10 @@ export default function KellnerScreen() {
     if (existingItemIndex >= 0) {
       const updatedCart = [...cart];
       if (updatedCart[existingItemIndex].quantity > 1) {
-        // Decrease quantity
         updatedCart[existingItemIndex].quantity -= 1;
         updatedCart[existingItemIndex].total = updatedCart[existingItemIndex].quantity * updatedCart[existingItemIndex].price;
         setCart(updatedCart);
       } else {
-        // Remove item completely
         updatedCart.splice(existingItemIndex, 1);
         setCart(updatedCart);
       }
@@ -472,44 +676,20 @@ export default function KellnerScreen() {
     }
 
     try {
-      console.log('=== DEBUG: Cart before processing ===');
-      console.log(JSON.stringify(cart, null, 2));
-      
-      // Convert cart to API format
       const orderCart = cart.map(cartItem => {
-        
-        console.log(`=== DEBUG: Processing cart item ===`);
-        console.log('Cart item UUID:', cartItem.uuid);
-        console.log('Cart item configurations:', cartItem.configurations);
-        
-        // Extract original item UUID (before our custom additions)
-        // Format: "uuid-{configs}-note" -> we want everything before the first "{" 
         const originalItemUuid = cartItem.uuid.split('-{')[0];
-        console.log('Extracted original UUID:', originalItemUuid);
-        
-        // Find the original item to get its configurations structure
         const originalItem = findOriginalItemByUuid(originalItemUuid);
-        console.log('Found original item:', originalItem ? originalItem.title : 'NOT FOUND');
-        
-        // Calculate base price and config price change for this item
         const basePrice = originalItem ? Number(originalItem.price) || 0 : 0;
         let configPriceChange = 0;
         
-        // Build configurations in the expected format
         const configurations: any = {};
         
         if (cartItem.configurations && originalItem?.item_configurations) {
-          console.log('Processing configurations...');
           const singles: any = {};
           const multiples: any = {};
           
-          // Process each configuration
           Object.entries(cartItem.configurations).forEach(([configTitle, selectedValue]) => {
-            console.log(`Config: ${configTitle} = `, selectedValue);
-            
-            // Find the original configuration to determine its type
             const originalConfig = originalItem.item_configurations!.find(config => config.title === configTitle);
-            console.log(`Original config found:`, originalConfig ? originalConfig.type : 'NOT FOUND');
             
             if (originalConfig) {
               const options = originalConfig.configuration_options || [];
@@ -521,13 +701,11 @@ export default function KellnerScreen() {
                   value: selectedValue,
                   price_change: priceChange.toFixed(2)
                 };
-                // Add to total config price change
                 configPriceChange += priceChange;
               } else if (originalConfig.type === 'multiple' && Array.isArray(selectedValue) && selectedValue.length > 0) {
                 multiples[configTitle] = selectedValue.map(value => {
                   const option = options.find(opt => opt.title === value);
                   const priceChange = Number(option?.price_change) || 0;
-                  // Add to total config price change
                   configPriceChange += priceChange;
                   return {
                     title: value,
@@ -538,39 +716,27 @@ export default function KellnerScreen() {
             }
           });
           
-          // Only add if there are configurations
           if (Object.keys(singles).length > 0) {
             configurations.singles = singles;
           }
           if (Object.keys(multiples).length > 0) {
             configurations.multiples = multiples;
           }
-          
-          console.log('Final configurations object:', configurations);
         }
         
-        const orderItem = {
+        return {
           item_id: originalItemUuid,
           qty: cartItem.quantity,
           price: cartItem.price,
           comments: cartItem.specialNote ? [cartItem.specialNote] : [],
-          // Format für FrontendController (item_configurations statt configurations)
           item_configurations: Object.keys(configurations).length > 0 ? configurations : undefined,
-          // Zusätzliche Felder die der FrontendController erwartet
           configuration_total: configPriceChange,
           base_price: basePrice
         };
-        
-        console.log('Final order item:', orderItem);
-        return orderItem;
       });
-
-      console.log('=== DEBUG: Final order cart ===');
-      console.log(JSON.stringify(orderCart, null, 2));
 
       await placeWaiterOrder(selectedTable.code, orderCart, '');
       
-      // SOFORT nach erfolgreichem API-Call - nicht warten auf Alert
       setCart([]);
       
       Alert.alert(
@@ -580,8 +746,14 @@ export default function KellnerScreen() {
           {
             text: 'Neue Bestellung',
             onPress: () => {
-              // Sicherheitshalber nochmal, aber sollte schon leer sein
               setCart([]);
+            }
+          },
+          {
+            text: 'Zur Rechnung',
+            onPress: () => {
+              setActiveTab('billing');
+              loadBillingData();
             }
           },
           {
@@ -600,7 +772,6 @@ export default function KellnerScreen() {
     }
   };
 
-  // Helper function to find original item by UUID
   const findOriginalItemByUuid = (uuid: string): MenuItem | undefined => {
     for (const category of processedCategories) {
       const item = category.items.find(item => item.uuid === uuid);
@@ -614,13 +785,205 @@ export default function KellnerScreen() {
     setSelectedTable(null);
     setCart([]);
     setSelectedCategory(null);
+    setBillingData(null);
+    setSelectedItems([]);
+    setActiveTab('order');
   };
 
-  // Order Interface (Orderman Style)
+  // Neue Komponente: Billing Interface
+  const renderBillingInterface = () => {
+    if (isLoadingBilling) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#007AFF" />
+          <Text style={styles.loadingText}>Lade Abrechnungsdaten...</Text>
+        </View>
+      );
+    }
+
+    if (!billingData) {
+      return (
+        <View style={styles.emptyState}>
+          <Ionicons name="receipt-outline" size={80} color="#9ca3af" />
+          <Text style={styles.emptyStateTitle}>Keine Abrechnungsdaten</Text>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.billingContainer}>
+        {/* Payment Overview */}
+        <View style={styles.paymentOverview}>
+          <View style={styles.paymentCard}>
+            <View style={styles.paymentCardContent}>
+              <Ionicons name="checkmark-circle" size={24} color="#10b981" />
+              <View>
+                <Text style={styles.paymentLabel}>Bezahlt</Text>
+                <Text style={styles.paymentAmount}>€{billingData.totals.paid_amount.toFixed(2)}</Text>
+              </View>
+            </View>
+          </View>
+          
+          <View style={styles.paymentCard}>
+            <View style={styles.paymentCardContent}>
+              <Ionicons name="time-outline" size={24} color="#f59e0b" />
+              <View>
+                <Text style={styles.paymentLabel}>Ausstehend</Text>
+                <Text style={styles.paymentAmount}>€{billingData.totals.pending_amount.toFixed(2)}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Items List */}
+        <ScrollView style={styles.billingItemsList}>
+          {billingData.customers.map((customer, customerIndex) => (
+            <View key={customer.session_id} style={styles.customerSection}>
+              <View style={styles.customerHeader}>
+                <Ionicons name="person" size={20} color="#007AFF" />
+                <Text style={styles.customerTitle}>Kunde {customer.customer_number}</Text>
+              </View>
+              
+              {customer.items.map((item, itemIndex) => (
+                <View key={item.uuid} style={styles.billingItem}>
+                  <View style={styles.billingItemCheckbox}>
+                    <TouchableOpacity
+                      style={[
+                        styles.checkbox,
+                        selectedItems.includes(item.uuid) && styles.checkboxSelected
+                      ]}
+                      onPress={() => {
+                        if (selectedItems.includes(item.uuid)) {
+                          setSelectedItems(selectedItems.filter(id => id !== item.uuid));
+                        } else {
+                          setSelectedItems([...selectedItems, item.uuid]);
+                        }
+                      }}
+                    >
+                      {selectedItems.includes(item.uuid) && (
+                        <Ionicons name="checkmark" size={16} color="#ffffff" />
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                  
+                  <View style={styles.billingItemInfo}>
+                    <Text style={[
+                      styles.billingItemTitle,
+                      item.is_paid && styles.paidItemTitle
+                    ]}>
+                      {item.title}
+                    </Text>
+                    
+                    <View style={styles.billingItemDetails}>
+                      <Text style={styles.billingItemCategory}>{item.category}</Text>
+                      {item.is_added_by_staff && (
+                        <View style={styles.staffBadge}>
+                          <Text style={styles.staffBadgeText}>Staff</Text>
+                        </View>
+                      )}
+                      {item.is_paid && (
+                        <View style={styles.paidBadge}>
+                          <Text style={styles.paidBadgeText}>Bezahlt</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Show configurations if any */}
+                    {item.configurations && (
+                      <View style={styles.itemConfigurations}>
+                        {item.configurations.singles && Object.entries(item.configurations.singles).map(([key, config]: [string, any]) => (
+                          <Text key={key} style={styles.configurationText}>
+                            {key}: {config.value}
+                          </Text>
+                        ))}
+                        {item.configurations.multiples && Object.entries(item.configurations.multiples).map(([key, configs]: [string, any]) => (
+                          <View key={key}>
+                            <Text style={styles.configurationText}>{key}: {configs.map((c: any) => c.title).join(', ')}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                  
+                  <View style={styles.billingItemPrice}>
+                    <Text style={[
+                      styles.itemPriceText,
+                      item.is_paid && styles.paidItemPrice
+                    ]}>
+                      €{item.price.toFixed(2)}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.billingItemActions}>
+                    <TouchableOpacity
+                      style={[
+                        styles.actionButton,
+                        item.is_paid ? styles.unpayButton : styles.payButton
+                      ]}
+                      onPress={() => handleToggleItemPaid(item.uuid)}
+                    >
+                      <Ionicons 
+                        name={item.is_paid ? "arrow-undo" : "card"} 
+                        size={16} 
+                        color="#ffffff" 
+                      />
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.cancelButton]}
+                      onPress={() => handleCancelItem(item.uuid)}
+                    >
+                      <Ionicons name="close" size={16} color="#ffffff" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ))}
+        </ScrollView>
+
+        {/* Action Buttons */}
+        <View style={styles.billingActions}>
+          <View style={styles.billingActionsRow}>
+            <TouchableOpacity 
+              style={[styles.billingActionButton, styles.bulkPayButton]}
+              onPress={handleBulkPayItems}
+              disabled={selectedItems.length === 0}
+            >
+              <Ionicons name="card-outline" size={20} color="#ffffff" />
+              <Text style={styles.billingActionText}>
+                Ausgewählte bezahlen ({selectedItems.length})
+              </Text>
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.billingActionsRow}>
+            <TouchableOpacity 
+              style={[styles.billingActionButton, styles.payAllButton]}
+              onPress={handlePaySession}
+            >
+              <Ionicons name="card" size={20} color="#ffffff" />
+              <Text style={styles.billingActionText}>Alle bezahlen</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.billingActionButton, styles.endSessionButton]}
+              onPress={handleEndSession}
+            >
+              <Ionicons name="power" size={20} color="#ffffff" />
+              <Text style={styles.billingActionText}>Session beenden</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  // Order Interface mit Tab-Navigation
   if (showOrderInterface && selectedTable) {
     return (
       <SafeAreaView style={styles.container}>
-        {/* Top Bar - Cart Summary */}
+        {/* Top Bar mit Tab-Navigation */}
         <View style={styles.topBar}>
           <TouchableOpacity style={styles.backButton} onPress={handleBackToTables}>
             <Ionicons name="arrow-back" size={20} color="#fff" />
@@ -631,248 +994,303 @@ export default function KellnerScreen() {
           </View>
           
           <View style={styles.cartSummary}>
-            <Text style={styles.cartTotal}>{getCartTotal().toFixed(2)} €</Text>
-            <Text style={styles.cartItemCount}>({getCartItemCount()} Items)</Text>
+            {activeTab === 'order' ? (
+              <>
+                <Text style={styles.cartTotal}>{getCartTotal().toFixed(2)} €</Text>
+                <Text style={styles.cartItemCount}>({getCartItemCount()} Items)</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.cartTotal}>
+                  €{billingData?.totals.total_amount.toFixed(2) || '0.00'}
+                </Text>
+                <Text style={styles.cartItemCount}>Gesamt</Text>
+              </>
+            )}
           </View>
         </View>
 
-        {isLoadingMenu ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#007AFF" />
-            <Text style={styles.loadingText}>Lade Menü...</Text>
-          </View>
-        ) : (
-          <>
-            {/* Category Buttons */}
-            <View style={styles.categoryContainer}>
-              <ScrollView 
-                horizontal 
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.categoryScrollContent}
-              >
-                {processedCategories.map((category) => (
-                  <TouchableOpacity
-                    key={category.id}
-                    style={[
-                      styles.categoryButton,
-                      selectedCategory?.id === category.id && styles.categoryButtonActive
-                    ]}
-                    onPress={() => setSelectedCategory(category)}
-                  >
-                    <Text style={[
-                      styles.categoryButtonText,
-                      selectedCategory?.id === category.id && styles.categoryButtonTextActive
-                    ]}>
-                      {category.title}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
+        {/* Tab Navigation */}
+        <View style={styles.tabNavigation}>
+          <TouchableOpacity
+            style={[
+              styles.tabButton,
+              activeTab === 'order' && styles.tabButtonActive
+            ]}
+            onPress={() => handleTabChange('order')}
+          >
+            <Ionicons 
+              name={activeTab === 'order' ? "restaurant" : "restaurant-outline"} 
+              size={20} 
+              color={activeTab === 'order' ? "#ffffff" : "#6b7280"} 
+            />
+            <Text style={[
+              styles.tabButtonText,
+              activeTab === 'order' && styles.tabButtonTextActive
+            ]}>
+              Bestellen
+            </Text>
+          </TouchableOpacity>
 
-            {/* Items List - Now takes up 60% of screen */}
-            <View style={styles.itemsContainer}>
-              {selectedCategory && (
-                <FlatList
-                  data={selectedCategory.items}
-                  keyExtractor={(item) => item.uuid}
-                  numColumns={2}
-                  columnWrapperStyle={styles.itemsRow}
-                  renderItem={({ item }) => {
-                    const cartQuantity = cart
-                      .filter(cartItem => cartItem.uuid.startsWith(item.uuid))
-                      .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
-                    const isUnavailable = item.sold_out || item.is_disabled;
-                    
-                    return (
-                      <View style={[
-                        styles.itemButton,
-                        isUnavailable && styles.itemButtonDisabled,
-                        cartQuantity > 0 && styles.itemButtonSelected
+          <TouchableOpacity
+            style={[
+              styles.tabButton,
+              activeTab === 'billing' && styles.tabButtonActive
+            ]}
+            onPress={() => handleTabChange('billing')}
+          >
+            <Ionicons 
+              name={activeTab === 'billing' ? "receipt" : "receipt-outline"} 
+              size={20} 
+              color={activeTab === 'billing' ? "#ffffff" : "#6b7280"} 
+            />
+            <Text style={[
+              styles.tabButtonText,
+              activeTab === 'billing' && styles.tabButtonTextActive
+            ]}>
+              Rechnung
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Tab Content */}
+        {activeTab === 'order' ? (
+          // BESTELLEN TAB - Bestehende Order-Logic
+          isLoadingMenu ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#007AFF" />
+              <Text style={styles.loadingText}>Lade Menü...</Text>
+            </View>
+          ) : (
+            <>
+              {/* Category Buttons */}
+              <View style={styles.categoryContainer}>
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.categoryScrollContent}
+                >
+                  {processedCategories.map((category) => (
+                    <TouchableOpacity
+                      key={category.id}
+                      style={[
+                        styles.categoryButton,
+                        selectedCategory?.id === category.id && styles.categoryButtonActive
+                      ]}
+                      onPress={() => setSelectedCategory(category)}
+                    >
+                      <Text style={[
+                        styles.categoryButtonText,
+                        selectedCategory?.id === category.id && styles.categoryButtonTextActive
                       ]}>
-                        {/* MODIFIED: Direkter Klick fügt Item hinzu */}
-                        <TouchableOpacity
-                          style={styles.itemMainArea}
-                          onPress={() => !isUnavailable && addItemDirectly(item)}
-                          disabled={isUnavailable}
-                        >
-                          <View style={styles.itemContent}>
-                            <Text style={[
-                              styles.itemTitle,
-                              isUnavailable && styles.itemTitleDisabled
-                            ]} numberOfLines={2}>
-                              {item.title}
-                            </Text>
-                            
-                            <Text style={[
-                              styles.itemPrice,
-                              isUnavailable && styles.itemPriceDisabled
-                            ]}>
-                              {Number(item.price || 0).toFixed(2)} €
-                            </Text>
-                          </View>
-                        </TouchableOpacity>
-
-                        {/* MODIFIED: Configuration Button öffnet Modal */}
-                        <TouchableOpacity
-                          style={styles.configButton}
-                          onPress={() => !isUnavailable && openItemModal(item)}
-                          disabled={isUnavailable}
-                        >
-                          <Ionicons name="create-outline" size={18} color="#ffffff" />
-                        </TouchableOpacity>
-
-                        {cartQuantity > 0 && (
-                          <View style={styles.quantityBadge}>
-                            <Text style={styles.quantityText}>{cartQuantity}</Text>
-                          </View>
-                        )}
-                        
-                        {isUnavailable && (
-                          <View style={styles.unavailableBadge}>
-                            <Text style={styles.unavailableText}>
-                              {item.sold_out ? 'Ausverkauft' : 'Nicht verfügbar'}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                    );
-                  }}
-                />
-              )}
-            </View>
-
-            {/* NEW: Live Cart Section - Takes up 40% of screen */}
-            <View style={styles.cartSection}>
-              <View style={styles.cartHeader}>
-                <Text style={styles.cartHeaderTitle}>Warenkorb</Text>
-                <View style={styles.cartHeaderSummary}>
-                  <Text style={styles.cartHeaderTotal}>{getCartTotal().toFixed(2)} €</Text>
-                  <Text style={styles.cartHeaderCount}>({getCartItemCount()} Items)</Text>
-                </View>
+                        {category.title}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
               </View>
 
-              {cart.length > 0 ? (
-                <FlatList
-                  data={cart}
-                  keyExtractor={(item) => item.uuid}
-                  style={styles.cartList}
-                  renderItem={({ item }) => (
-                    <View style={styles.cartItem}>
-                      <View style={styles.cartItemMain}>
-                        <View style={styles.cartItemInfo}>
-                          <Text style={styles.cartItemTitle} numberOfLines={1}>
-                            {item.title}
-                          </Text>
-                          
-                          {/* Show configurations if any */}
-                          {item.configurations && (
-                            <View style={styles.cartItemConfigs}>
-                              {Object.entries(item.configurations).map(([configTitle, value]) => (
-                                <Text key={configTitle} style={styles.cartItemConfigText} numberOfLines={1}>
-                                  {configTitle}: {Array.isArray(value) ? value.join(', ') : value}
-                                </Text>
-                              ))}
+              {/* Items List */}
+              <View style={styles.itemsContainer}>
+                {selectedCategory && (
+                  <FlatList
+                    data={selectedCategory.items}
+                    keyExtractor={(item) => item.uuid}
+                    numColumns={2}
+                    columnWrapperStyle={styles.itemsRow}
+                    renderItem={({ item }) => {
+                      const cartQuantity = cart
+                        .filter(cartItem => cartItem.uuid.startsWith(item.uuid))
+                        .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
+                      const isUnavailable = item.sold_out || item.is_disabled;
+                      
+                      return (
+                        <View style={[
+                          styles.itemButton,
+                          isUnavailable && styles.itemButtonDisabled,
+                          cartQuantity > 0 && styles.itemButtonSelected
+                        ]}>
+                          <TouchableOpacity
+                            style={styles.itemMainArea}
+                            onPress={() => !isUnavailable && addItemDirectly(item)}
+                            disabled={isUnavailable}
+                          >
+                            <View style={styles.itemContent}>
+                              <Text style={[
+                                styles.itemTitle,
+                                isUnavailable && styles.itemTitleDisabled
+                              ]} numberOfLines={2}>
+                                {item.title}
+                              </Text>
+                              
+                              <Text style={[
+                                styles.itemPrice,
+                                isUnavailable && styles.itemPriceDisabled
+                              ]}>
+                                {Number(item.price || 0).toFixed(2)} €
+                              </Text>
+                            </View>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={styles.configButton}
+                            onPress={() => !isUnavailable && openItemModal(item)}
+                            disabled={isUnavailable}
+                          >
+                            <Ionicons name="create-outline" size={18} color="#ffffff" />
+                          </TouchableOpacity>
+
+                          {cartQuantity > 0 && (
+                            <View style={styles.quantityBadge}>
+                              <Text style={styles.quantityText}>{cartQuantity}</Text>
                             </View>
                           )}
                           
-                          {/* Show special note if any */}
-                          {item.specialNote && (
-                            <Text style={styles.cartItemNote} numberOfLines={1}>
-                              Notiz: {item.specialNote}
-                            </Text>
+                          {isUnavailable && (
+                            <View style={styles.unavailableBadge}>
+                              <Text style={styles.unavailableText}>
+                                {item.sold_out ? 'Ausverkauft' : 'Nicht verfügbar'}
+                              </Text>
+                            </View>
                           )}
                         </View>
+                      );
+                    }}
+                  />
+                )}
+              </View>
 
-                        <View style={styles.cartItemControls}>
-                          <Text style={styles.cartItemPrice}>
-                            {item.total.toFixed(2)} €
-                          </Text>
-                          
-                          <View style={styles.cartItemQuantityControls}>
-                            <TouchableOpacity
-                              style={styles.cartQuantityButton}
-                              onPress={() => removeFromCart(item.uuid)}
-                            >
-                              <Text style={styles.cartQuantityButtonText}>-</Text>
-                            </TouchableOpacity>
+              {/* Live Cart Section */}
+              <View style={styles.cartSection}>
+                <View style={styles.cartHeader}>
+                  <Text style={styles.cartHeaderTitle}>Warenkorb</Text>
+                  <View style={styles.cartHeaderSummary}>
+                    <Text style={styles.cartHeaderTotal}>{getCartTotal().toFixed(2)} €</Text>
+                    <Text style={styles.cartHeaderCount}>({getCartItemCount()} Items)</Text>
+                  </View>
+                </View>
+
+                {cart.length > 0 ? (
+                  <FlatList
+                    data={cart}
+                    keyExtractor={(item) => item.uuid}
+                    style={styles.cartList}
+                    renderItem={({ item }) => (
+                      <View style={styles.cartItem}>
+                        <View style={styles.cartItemMain}>
+                          <View style={styles.cartItemInfo}>
+                            <Text style={styles.cartItemTitle} numberOfLines={1}>
+                              {item.title}
+                            </Text>
                             
-                            <Text style={styles.cartQuantityDisplay}>{item.quantity}</Text>
+                            {item.configurations && (
+                              <View style={styles.cartItemConfigs}>
+                                {Object.entries(item.configurations).map(([configTitle, value]) => (
+                                  <Text key={configTitle} style={styles.cartItemConfigText} numberOfLines={1}>
+                                    {configTitle}: {Array.isArray(value) ? value.join(', ') : value}
+                                  </Text>
+                                ))}
+                              </View>
+                            )}
                             
-                            <TouchableOpacity
-                              style={styles.cartQuantityButton}
-                              onPress={() => {
-                                // Add one more of the same item
-                                const updatedCart = [...cart];
-                                const itemIndex = updatedCart.findIndex(cartItem => cartItem.uuid === item.uuid);
-                                if (itemIndex >= 0) {
-                                  updatedCart[itemIndex].quantity += 1;
-                                  updatedCart[itemIndex].total = updatedCart[itemIndex].quantity * updatedCart[itemIndex].price;
-                                  setCart(updatedCart);
-                                }
-                              }}
-                            >
-                              <Text style={styles.cartQuantityButtonText}>+</Text>
-                            </TouchableOpacity>
+                            {item.specialNote && (
+                              <Text style={styles.cartItemNote} numberOfLines={1}>
+                                Notiz: {item.specialNote}
+                              </Text>
+                            )}
+                          </View>
+
+                          <View style={styles.cartItemControls}>
+                            <Text style={styles.cartItemPrice}>
+                              {item.total.toFixed(2)} €
+                            </Text>
+                            
+                            <View style={styles.cartItemQuantityControls}>
+                              <TouchableOpacity
+                                style={styles.cartQuantityButton}
+                                onPress={() => removeFromCart(item.uuid)}
+                              >
+                                <Text style={styles.cartQuantityButtonText}>-</Text>
+                              </TouchableOpacity>
+                              
+                              <Text style={styles.cartQuantityDisplay}>{item.quantity}</Text>
+                              
+                              <TouchableOpacity
+                                style={styles.cartQuantityButton}
+                                onPress={() => {
+                                  const updatedCart = [...cart];
+                                  const itemIndex = updatedCart.findIndex(cartItem => cartItem.uuid === item.uuid);
+                                  if (itemIndex >= 0) {
+                                    updatedCart[itemIndex].quantity += 1;
+                                    updatedCart[itemIndex].total = updatedCart[itemIndex].quantity * updatedCart[itemIndex].price;
+                                    setCart(updatedCart);
+                                  }
+                                }}
+                              >
+                                <Text style={styles.cartQuantityButtonText}>+</Text>
+                              </TouchableOpacity>
+                            </View>
                           </View>
                         </View>
+
+                        <TouchableOpacity
+                          style={styles.cartItemRemove}
+                          onPress={() => {
+                            const updatedCart = cart.filter(cartItem => cartItem.uuid !== item.uuid);
+                            setCart(updatedCart);
+                          }}
+                        >
+                          <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                        </TouchableOpacity>
                       </View>
+                    )}
+                  />
+                ) : (
+                  <View style={styles.emptyCart}>
+                    <Ionicons name="basket-outline" size={48} color="#9ca3af" />
+                    <Text style={styles.emptyCartText}>Warenkorb ist leer</Text>
+                    <Text style={styles.emptyCartSubtext}>Wählen Sie Items aus dem Menü</Text>
+                  </View>
+                )}
 
-                      {/* Remove button */}
-                      <TouchableOpacity
-                        style={styles.cartItemRemove}
-                        onPress={() => {
-                          const updatedCart = cart.filter(cartItem => cartItem.uuid !== item.uuid);
-                          setCart(updatedCart);
-                        }}
-                      >
-                        <Ionicons name="trash-outline" size={16} color="#ef4444" />
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                />
-              ) : (
-                <View style={styles.emptyCart}>
-                  <Ionicons name="basket-outline" size={48} color="#9ca3af" />
-                  <Text style={styles.emptyCartText}>Warenkorb ist leer</Text>
-                  <Text style={styles.emptyCartSubtext}>Wählen Sie Items aus dem Menü</Text>
+                {/* Order Button */}
+                <View style={styles.cartFooter}>
+                  <TouchableOpacity 
+                    style={styles.clearCartButton}
+                    onPress={() => setCart([])}
+                    disabled={cart.length === 0}
+                  >
+                    <Text style={[
+                      styles.clearCartText,
+                      cart.length === 0 && styles.disabledButtonText
+                    ]}>Leeren</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={[
+                      styles.orderButton,
+                      cart.length === 0 && styles.disabledButton
+                    ]}
+                    onPress={submitOrder}
+                    disabled={cart.length === 0}
+                  >
+                    <Text style={[
+                      styles.orderButtonText,
+                      cart.length === 0 && styles.disabledButtonText
+                    ]}>
+                      Bestellen - {getCartTotal().toFixed(2)} €
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-              )}
-
-              {/* Order Button - Always visible */}
-              <View style={styles.cartFooter}>
-                <TouchableOpacity 
-                  style={styles.clearCartButton}
-                  onPress={() => setCart([])}
-                  disabled={cart.length === 0}
-                >
-                  <Text style={[
-                    styles.clearCartText,
-                    cart.length === 0 && styles.disabledButtonText
-                  ]}>Leeren</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                  style={[
-                    styles.orderButton,
-                    cart.length === 0 && styles.disabledButton
-                  ]}
-                  onPress={submitOrder}
-                  disabled={cart.length === 0}
-                >
-                  <Text style={[
-                    styles.orderButtonText,
-                    cart.length === 0 && styles.disabledButtonText
-                  ]}>
-                    Bestellen - {getCartTotal().toFixed(2)} €
-                  </Text>
-                </TouchableOpacity>
               </View>
-            </View>
-          </>
+            </>
+          )
+        ) : (
+          // RECHNUNG TAB - Neue Billing-Logic
+          renderBillingInterface()
         )}
 
-        {/* Item Configuration Modal */}
+        {/* Item Configuration Modal - Unverändert */}
         <Modal
           visible={showItemModal}
           transparent={true}
@@ -884,7 +1302,6 @@ export default function KellnerScreen() {
               <ScrollView style={styles.modalScrollView}>
                 {selectedItem && (
                   <>
-                    {/* Modal Header */}
                     <View style={styles.modalHeader}>
                       <TouchableOpacity
                         style={styles.modalCloseButton}
@@ -894,7 +1311,6 @@ export default function KellnerScreen() {
                       </TouchableOpacity>
                     </View>
 
-                    {/* Item Info */}
                     <View style={styles.modalItemInfo}>
                       <Text style={styles.modalItemTitle}>{selectedItem.title}</Text>
                       <Text style={styles.modalItemPrice}>
@@ -905,7 +1321,6 @@ export default function KellnerScreen() {
                       )}
                     </View>
 
-                    {/* Special Notes */}
                     <View style={styles.modalSection}>
                       <Text style={styles.modalSectionTitle}>Spezielle Notizen</Text>
                       <TextInput
@@ -918,7 +1333,6 @@ export default function KellnerScreen() {
                       />
                     </View>
 
-                    {/* Configurations */}
                     {selectedItem.item_configurations && selectedItem.item_configurations.length > 0 && (
                       <View style={styles.modalSection}>
                         <Text style={styles.modalSectionTitle}>Extras</Text>
@@ -980,7 +1394,6 @@ export default function KellnerScreen() {
                 )}
               </ScrollView>
 
-              {/* Modal Footer */}
               <View style={styles.modalFooter}>
                 <View style={styles.modalQuantityControls}>
                   <TouchableOpacity
@@ -1016,7 +1429,7 @@ export default function KellnerScreen() {
     );
   }
 
-  // Table Selection (Original)
+  // Table Selection (Original - Unverändert)
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -1085,7 +1498,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f9fafb',
   },
   
-  // Table Selection Styles
+  // BESTEHENDE STYLES (Table Selection, Modal etc.) - Unverändert
   header: {
     backgroundColor: '#ffffff',
     padding: 24,
@@ -1184,7 +1597,7 @@ const styles = StyleSheet.create({
     color: '#374151',
   },
 
-  // Order Interface Styles (Orderman-like)
+  // ERWEITERTE TOP BAR MIT TAB NAVIGATION
   topBar: {
     backgroundColor: '#1f2937',
     flexDirection: 'row',
@@ -1218,7 +1631,36 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 
-  // Categories
+  // NEUE TAB NAVIGATION STYLES
+  tabNavigation: {
+    backgroundColor: '#ffffff',
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  tabButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    gap: 8,
+    backgroundColor: '#f9fafb',
+  },
+  tabButtonActive: {
+    backgroundColor: '#007AFF',
+  },
+  tabButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  tabButtonTextActive: {
+    color: '#ffffff',
+  },
+
+  // BESTEHENDE ORDER STYLES (unverändert)
   categoryContainer: {
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
@@ -1248,10 +1690,8 @@ const styles = StyleSheet.create({
   categoryButtonTextActive: {
     color: '#ffffff',
   },
-
-  // Items
   itemsContainer: {
-    flex: 0.6, // Takes 60% of available space
+    flex: 0.6,
     backgroundColor: '#ffffff',
     paddingHorizontal: 8,
     paddingTop: 8,
@@ -1354,9 +1794,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // Live Cart Section
+  // CART STYLES
   cartSection: {
-    flex: 0.4, // Takes 40% of available space
+    flex: 0.4,
     backgroundColor: '#f8fafc',
     borderTopWidth: 2,
     borderTopColor: '#e2e8f0',
@@ -1406,79 +1846,79 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
-    minHeight: 60, // Kleiner: war vorher implizit ~80px
+    minHeight: 60,
   },
   cartItemMain: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 8, // Kleiner: war 12
+    padding: 8,
   },
   cartItemInfo: {
     flex: 1,
-    marginRight: 8, // Kleiner: war 12
+    marginRight: 8,
   },
   cartItemTitle: {
-    fontSize: 13, // Kleiner: war 14
+    fontSize: 13,
     fontWeight: '600',
     color: '#1f2937',
     marginBottom: 2,
   },
   cartItemConfigs: {
-    marginTop: 1, // Kleiner: war 2
+    marginTop: 1,
   },
   cartItemConfigText: {
-    fontSize: 10, // Kleiner: war 11
+    fontSize: 10,
     color: '#6b7280',
     fontStyle: 'italic',
   },
   cartItemNote: {
-    fontSize: 10, // Kleiner: war 11
+    fontSize: 10,
     color: '#f59e0b',
     fontStyle: 'italic',
-    marginTop: 1, // Kleiner: war 2
+    marginTop: 1,
   },
   cartItemControls: {
     alignItems: 'flex-end',
   },
   cartItemPrice: {
-    fontSize: 13, // Kleiner: war 14
+    fontSize: 13,
     fontWeight: 'bold',
     color: '#007AFF',
-    marginBottom: 3, // Kleiner: war 4
+    marginBottom: 3,
   },
   cartItemQuantityControls: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f3f4f6',
-    borderRadius: 4, // Kleiner: war 6
-    padding: 1, // Kleiner: war 2
+    borderRadius: 4,
+    padding: 1,
   },
   cartQuantityButton: {
     backgroundColor: '#ffffff',
-    width: 24, // Kleiner: war 28
-    height: 24, // Kleiner: war 28
-    borderRadius: 3, // Kleiner: war 4
+    width: 24,
+    height: 24,
+    borderRadius: 3,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#e5e7eb',
   },
   cartQuantityButtonText: {
-    fontSize: 12, // Kleiner: war 14
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#374151',
   },
   cartQuantityDisplay: {
-    fontSize: 12, // Kleiner: war 14
+    fontSize: 12,
     fontWeight: 'bold',
     color: '#1f2937',
-    marginHorizontal: 8, // Kleiner: war 12
-    minWidth: 16, // Kleiner: war 20
+    marginHorizontal: 8,
+    minWidth: 16,
     textAlign: 'center',
   },
   cartItemRemove: {
-    padding: 8, // Kleiner: war 12
+    padding: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1512,16 +1952,6 @@ const styles = StyleSheet.create({
   disabledButtonText: {
     color: '#9ca3af',
   },
-
-  // Bottom Bar (Updated)
-  bottomBar: {
-    backgroundColor: '#ffffff',
-    flexDirection: 'row',
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-    gap: 12,
-  },
   clearCartButton: {
     backgroundColor: '#ef4444',
     paddingVertical: 12,
@@ -1548,7 +1978,212 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
-  // Modal Styles
+  // NEUE BILLING STYLES
+  billingContainer: {
+    flex: 1,
+    backgroundColor: '#f9fafb',
+  },
+  paymentOverview: {
+    backgroundColor: '#ffffff',
+    flexDirection: 'row',
+    padding: 16,
+    gap: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  paymentCard: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  paymentCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  paymentLabel: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  paymentAmount: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  billingItemsList: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  customerSection: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    marginVertical: 8,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  customerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  customerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  billingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  billingItemCheckbox: {
+    marginRight: 12,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#d1d5db',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxSelected: {
+    backgroundColor: '#007AFF',
+    borderColor: '#007AFF',
+  },
+  billingItemInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  billingItemTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 4,
+  },
+  paidItemTitle: {
+    color: '#10b981',
+  },
+  billingItemDetails: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  billingItemCategory: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  staffBadge: {
+    backgroundColor: '#007AFF',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  staffBadgeText: {
+    fontSize: 10,
+    color: '#ffffff',
+    fontWeight: '500',
+  },
+  paidBadge: {
+    backgroundColor: '#10b981',
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  paidBadgeText: {
+    fontSize: 10,
+    color: '#ffffff',
+    fontWeight: '500',
+  },
+  itemConfigurations: {
+    marginTop: 4,
+  },
+  configurationText: {
+    fontSize: 11,
+    color: '#8b5cf6',
+    fontStyle: 'italic',
+  },
+  billingItemPrice: {
+    marginRight: 12,
+  },
+  itemPriceText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  paidItemPrice: {
+    color: '#10b981',
+  },
+  billingItemActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payButton: {
+    backgroundColor: '#10b981',
+  },
+  unpayButton: {
+    backgroundColor: '#f59e0b',
+  },
+  cancelButton: {
+    backgroundColor: '#ef4444',
+  },
+  billingActions: {
+    backgroundColor: '#ffffff',
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+    gap: 12,
+  },
+  billingActionsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  billingActionButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+  },
+  bulkPayButton: {
+    backgroundColor: '#8b5cf6',
+  },
+  payAllButton: {
+    backgroundColor: '#10b981',
+  },
+  endSessionButton: {
+    backgroundColor: '#ef4444',
+  },
+  billingActionText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  // MODAL STYLES (unverändert)
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
