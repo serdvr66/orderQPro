@@ -148,6 +148,7 @@ export default function KellnerScreen() {
   
   // UI States
   const [showOrderInterface, setShowOrderInterface] = useState(false);
+  const [isCartExpanded, setIsCartExpanded] = useState(false); // Neue State für aufgeklappten Warenkorb
   const [activeTab, setActiveTab] = useState<'order' | 'billing'>('order'); // Neue Tab-State
   
   // Modal States
@@ -1100,14 +1101,12 @@ export default function KellnerScreen() {
                 </ScrollView>
               </View>
 
-              {/* Items List */}
+              {/* Items List - Neue Listen-Darstellung */}
               <View style={styles.itemsContainer}>
                 {selectedCategory && (
                   <FlatList
                     data={selectedCategory.items}
                     keyExtractor={(item) => item.uuid}
-                    numColumns={2}
-                    columnWrapperStyle={styles.itemsRow}
                     renderItem={({ item }) => {
                       const cartQuantity = cart
                         .filter(cartItem => cartItem.uuid.startsWith(item.uuid))
@@ -1116,49 +1115,65 @@ export default function KellnerScreen() {
                       
                       return (
                         <View style={[
-                          styles.itemButton,
-                          isUnavailable && styles.itemButtonDisabled,
-                          cartQuantity > 0 && styles.itemButtonSelected
+                          styles.itemRow,
+                          isUnavailable && styles.itemRowDisabled,
+                          cartQuantity > 0 && styles.itemRowSelected
                         ]}>
                           <TouchableOpacity
-                            style={styles.itemMainArea}
+                            style={styles.itemRowMainArea}
                             onPress={() => !isUnavailable && addItemDirectly(item)}
                             disabled={isUnavailable}
                           >
-                            <View style={styles.itemContent}>
-                              <Text style={[
-                                styles.itemTitle,
-                                isUnavailable && styles.itemTitleDisabled
-                              ]} numberOfLines={2}>
-                                {item.title}
-                              </Text>
+                            <View style={styles.itemRowContent}>
+                              <View style={styles.itemRowInfo}>
+                                <Text style={[
+                                  styles.itemRowTitle,
+                                  isUnavailable && styles.itemRowTitleDisabled
+                                ]} numberOfLines={2}>
+                                  {item.title}
+                                </Text>
+                                
+                                {item.description && (
+                                  <Text style={[
+                                    styles.itemRowDescription,
+                                    isUnavailable && styles.itemRowDescriptionDisabled
+                                  ]} numberOfLines={1}>
+                                    {item.description}
+                                  </Text>
+                                )}
+                              </View>
                               
-                              <Text style={[
-                                styles.itemPrice,
-                                isUnavailable && styles.itemPriceDisabled
-                              ]}>
-                                {Number(item.price || 0).toFixed(2)} €
-                              </Text>
+                              <View style={styles.itemRowPrice}>
+                                <Text style={[
+                                  styles.itemRowPriceText,
+                                  isUnavailable && styles.itemRowPriceDisabled
+                                ]}>
+                                  {Number(item.price || 0).toFixed(2)} €
+                                </Text>
+                                
+                                {cartQuantity > 0 && (
+                                  <View style={styles.itemRowQuantityBadge}>
+                                    <Text style={styles.itemRowQuantityText}>{cartQuantity}</Text>
+                                  </View>
+                                )}
+                              </View>
                             </View>
                           </TouchableOpacity>
 
                           <TouchableOpacity
-                            style={styles.configButton}
+                            style={[
+                              styles.itemRowConfigButton,
+                              isUnavailable && styles.itemRowConfigButtonDisabled
+                            ]}
                             onPress={() => !isUnavailable && openItemModal(item)}
                             disabled={isUnavailable}
                           >
-                            <Ionicons name="create-outline" size={18} color="#ffffff" />
+                            <Ionicons name="create-outline" size={20} color="#ffffff" />
                           </TouchableOpacity>
-
-                          {cartQuantity > 0 && (
-                            <View style={styles.quantityBadge}>
-                              <Text style={styles.quantityText}>{cartQuantity}</Text>
-                            </View>
-                          )}
                           
                           {isUnavailable && (
-                            <View style={styles.unavailableBadge}>
-                              <Text style={styles.unavailableText}>
+                            <View style={styles.itemRowUnavailableBadge}>
+                              <Text style={styles.itemRowUnavailableText}>
                                 {item.sold_out ? 'Ausverkauft' : 'Nicht verfügbar'}
                               </Text>
                             </View>
@@ -1170,13 +1185,27 @@ export default function KellnerScreen() {
                 )}
               </View>
 
-              {/* Live Cart Section */}
-              <View style={styles.cartSection}>
+              {/* Kompakter Live Cart Section - Mit Expand-Option */}
+              <View style={isCartExpanded ? styles.cartSectionExpanded : styles.cartSection}>
                 <View style={styles.cartHeader}>
                   <Text style={styles.cartHeaderTitle}>Warenkorb</Text>
-                  <View style={styles.cartHeaderSummary}>
-                    <Text style={styles.cartHeaderTotal}>{getCartTotal().toFixed(2)} €</Text>
-                    <Text style={styles.cartHeaderCount}>({getCartItemCount()} Items)</Text>
+                  <View style={styles.cartHeaderActions}>
+                    <View style={styles.cartHeaderSummary}>
+                      <Text style={styles.cartHeaderTotal}>{getCartTotal().toFixed(2)} €</Text>
+                      <Text style={styles.cartHeaderCount}>({getCartItemCount()} Items)</Text>
+                    </View>
+                    
+                    {/* Expand/Collapse Button */}
+                    <TouchableOpacity
+                      style={styles.cartExpandButton}
+                      onPress={() => setIsCartExpanded(!isCartExpanded)}
+                    >
+                      <Ionicons 
+                        name={isCartExpanded ? "chevron-down" : "chevron-up"} 
+                        size={20} 
+                        color="#007AFF" 
+                      />
+                    </TouchableOpacity>
                   </View>
                 </View>
 
@@ -1185,48 +1214,51 @@ export default function KellnerScreen() {
                     data={cart}
                     keyExtractor={(item) => item.uuid}
                     style={styles.cartList}
+                    showsVerticalScrollIndicator={true}
                     renderItem={({ item }) => (
-                      <View style={styles.cartItem}>
-                        <View style={styles.cartItemMain}>
-                          <View style={styles.cartItemInfo}>
-                            <Text style={styles.cartItemTitle} numberOfLines={1}>
+                      <View style={styles.cartItemCompact}>
+                        <View style={styles.cartItemCompactMain}>
+                          <View style={styles.cartItemCompactInfo}>
+                            <Text style={styles.cartItemCompactTitle} numberOfLines={1}>
                               {item.title}
                             </Text>
                             
+                            {/* Kompakte Konfigurationen */}
                             {item.configurations && (
-                              <View style={styles.cartItemConfigs}>
+                              <View style={styles.cartItemCompactConfigs}>
                                 {Object.entries(item.configurations).map(([configTitle, value]) => (
-                                  <Text key={configTitle} style={styles.cartItemConfigText} numberOfLines={1}>
-                                    {configTitle}: {Array.isArray(value) ? value.join(', ') : value}
+                                  <Text key={configTitle} style={styles.cartItemCompactConfigText} numberOfLines={1}>
+                                    {Array.isArray(value) ? value.join(', ') : value}
                                   </Text>
                                 ))}
                               </View>
                             )}
                             
+                            {/* Kompakte Notiz */}
                             {item.specialNote && (
-                              <Text style={styles.cartItemNote} numberOfLines={1}>
-                                Notiz: {item.specialNote}
+                              <Text style={styles.cartItemCompactNote} numberOfLines={1}>
+                                "{item.specialNote}"
                               </Text>
                             )}
                           </View>
 
-                          <View style={styles.cartItemControls}>
-                            <Text style={styles.cartItemPrice}>
+                          <View style={styles.cartItemCompactControls}>
+                            <Text style={styles.cartItemCompactPrice}>
                               {item.total.toFixed(2)} €
                             </Text>
                             
-                            <View style={styles.cartItemQuantityControls}>
+                            <View style={styles.cartItemCompactQuantityControls}>
                               <TouchableOpacity
-                                style={styles.cartQuantityButton}
+                                style={styles.cartQuantityButtonCompact}
                                 onPress={() => removeFromCart(item.uuid)}
                               >
-                                <Text style={styles.cartQuantityButtonText}>-</Text>
+                                <Ionicons name="remove" size={14} color="#374151" />
                               </TouchableOpacity>
                               
-                              <Text style={styles.cartQuantityDisplay}>{item.quantity}</Text>
+                              <Text style={styles.cartQuantityDisplayCompact}>{item.quantity}</Text>
                               
                               <TouchableOpacity
-                                style={styles.cartQuantityButton}
+                                style={styles.cartQuantityButtonCompact}
                                 onPress={() => {
                                   const updatedCart = [...cart];
                                   const itemIndex = updatedCart.findIndex(cartItem => cartItem.uuid === item.uuid);
@@ -1237,58 +1269,56 @@ export default function KellnerScreen() {
                                   }
                                 }}
                               >
-                                <Text style={styles.cartQuantityButtonText}>+</Text>
+                                <Ionicons name="add" size={14} color="#374151" />
                               </TouchableOpacity>
                             </View>
                           </View>
                         </View>
 
+                        {/* Kompakter Remove Button */}
                         <TouchableOpacity
-                          style={styles.cartItemRemove}
+                          style={styles.cartItemCompactRemove}
                           onPress={() => {
                             const updatedCart = cart.filter(cartItem => cartItem.uuid !== item.uuid);
                             setCart(updatedCart);
                           }}
                         >
-                          <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                          <Ionicons name="close" size={14} color="#ef4444" />
                         </TouchableOpacity>
                       </View>
                     )}
                   />
                 ) : (
-                  <View style={styles.emptyCart}>
-                    <Ionicons name="basket-outline" size={48} color="#9ca3af" />
-                    <Text style={styles.emptyCartText}>Warenkorb ist leer</Text>
-                    <Text style={styles.emptyCartSubtext}>Wählen Sie Items aus dem Menü</Text>
+                  <View style={styles.emptyCartCompact}>
+                    <Ionicons name="basket-outline" size={32} color="#9ca3af" />
+                    <Text style={styles.emptyCartTextCompact}>Warenkorb ist leer</Text>
                   </View>
                 )}
 
-                {/* Order Button */}
-                <View style={styles.cartFooter}>
+                {/* Kompakte Order Buttons */}
+                <View style={styles.cartFooterCompact}>
                   <TouchableOpacity 
-                    style={styles.clearCartButton}
+                    style={[styles.clearCartButtonCompact, cart.length === 0 && styles.disabledButton]}
                     onPress={() => setCart([])}
                     disabled={cart.length === 0}
                   >
-                    <Text style={[
-                      styles.clearCartText,
-                      cart.length === 0 && styles.disabledButtonText
-                    ]}>Leeren</Text>
+                    <Ionicons name="trash-outline" size={16} color={cart.length === 0 ? "#9ca3af" : "#ffffff"} />
                   </TouchableOpacity>
                   
                   <TouchableOpacity 
                     style={[
-                      styles.orderButton,
+                      styles.orderButtonCompact,
                       cart.length === 0 && styles.disabledButton
                     ]}
                     onPress={submitOrder}
                     disabled={cart.length === 0}
                   >
+                    <Ionicons name="restaurant" size={16} color={cart.length === 0 ? "#9ca3af" : "#ffffff"} />
                     <Text style={[
-                      styles.orderButtonText,
+                      styles.orderButtonTextCompact,
                       cart.length === 0 && styles.disabledButtonText
                     ]}>
-                      Bestellen - {getCartTotal().toFixed(2)} €
+                      {getCartTotal().toFixed(2)} € bestellen
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -1431,6 +1461,172 @@ export default function KellnerScreen() {
                     Hinzufügen - {modalTotalPrice.toFixed(2)} €
                   </Text>
                 </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Expanded Cart Modal */}
+        <Modal
+          visible={isCartExpanded}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setIsCartExpanded(false)}
+        >
+          <View style={styles.expandedCartOverlay}>
+            <View style={styles.expandedCartContent}>
+              {/* Header */}
+              <View style={styles.expandedCartHeader}>
+                <Text style={styles.expandedCartTitle}>Warenkorb</Text>
+                <TouchableOpacity
+                  style={styles.expandedCartCloseButton}
+                  onPress={() => setIsCartExpanded(false)}
+                >
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Cart Items */}
+              <View style={styles.expandedCartItems}>
+                {cart.length > 0 ? (
+                  <FlatList
+                    data={cart}
+                    keyExtractor={(item) => item.uuid}
+                    showsVerticalScrollIndicator={true}
+                    renderItem={({ item }) => (
+                      <View style={styles.expandedCartItem}>
+                        <View style={styles.expandedCartItemMain}>
+                          <View style={styles.expandedCartItemInfo}>
+                            <Text style={styles.expandedCartItemTitle}>
+                              {item.title}
+                            </Text>
+                            
+                            {/* Detaillierte Konfigurationen */}
+                            {item.configurations && (
+                              <View style={styles.expandedCartItemConfigs}>
+                                {Object.entries(item.configurations).map(([configTitle, value]) => (
+                                  <Text key={configTitle} style={styles.expandedCartItemConfigText}>
+                                    <Text style={styles.expandedCartConfigLabel}>{configTitle}:</Text> {Array.isArray(value) ? value.join(', ') : value}
+                                  </Text>
+                                ))}
+                              </View>
+                            )}
+                            
+                            {/* Detaillierte Notiz */}
+                            {item.specialNote && (
+                              <Text style={styles.expandedCartItemNote}>
+                                <Text style={styles.expandedCartNoteLabel}>Notiz:</Text> {item.specialNote}
+                              </Text>
+                            )}
+
+                            {/* Preis-Details */}
+                            <View style={styles.expandedCartItemPriceDetails}>
+                              <Text style={styles.expandedCartItemUnitPrice}>
+                                Stückpreis: {item.price.toFixed(2)} €
+                              </Text>
+                              <Text style={styles.expandedCartItemTotalPrice}>
+                                Gesamt: {item.total.toFixed(2)} €
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.expandedCartItemControls}>
+                            <View style={styles.expandedCartItemQuantityControls}>
+                              <TouchableOpacity
+                                style={styles.expandedCartQuantityButton}
+                                onPress={() => removeFromCart(item.uuid)}
+                              >
+                                <Ionicons name="remove" size={18} color="#374151" />
+                              </TouchableOpacity>
+                              
+                              <Text style={styles.expandedCartQuantityDisplay}>{item.quantity}</Text>
+                              
+                              <TouchableOpacity
+                                style={styles.expandedCartQuantityButton}
+                                onPress={() => {
+                                  const updatedCart = [...cart];
+                                  const itemIndex = updatedCart.findIndex(cartItem => cartItem.uuid === item.uuid);
+                                  if (itemIndex >= 0) {
+                                    updatedCart[itemIndex].quantity += 1;
+                                    updatedCart[itemIndex].total = updatedCart[itemIndex].quantity * updatedCart[itemIndex].price;
+                                    setCart(updatedCart);
+                                  }
+                                }}
+                              >
+                                <Ionicons name="add" size={18} color="#374151" />
+                              </TouchableOpacity>
+                            </View>
+                            
+                            {/* Remove Button */}
+                            <TouchableOpacity
+                              style={styles.expandedCartItemRemove}
+                              onPress={() => {
+                                const updatedCart = cart.filter(cartItem => cartItem.uuid !== item.uuid);
+                                setCart(updatedCart);
+                              }}
+                            >
+                              <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      </View>
+                    )}
+                  />
+                ) : (
+                  <View style={styles.expandedCartEmpty}>
+                    <Ionicons name="basket-outline" size={64} color="#9ca3af" />
+                    <Text style={styles.expandedCartEmptyText}>Warenkorb ist leer</Text>
+                    <Text style={styles.expandedCartEmptySubtext}>Wählen Sie Items aus dem Menü</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Footer */}
+              <View style={styles.expandedCartFooter}>
+                <View style={styles.expandedCartSummary}>
+                  <View style={styles.expandedCartSummaryRow}>
+                    <Text style={styles.expandedCartSummaryLabel}>Items:</Text>
+                    <Text style={styles.expandedCartSummaryValue}>{getCartItemCount()}</Text>
+                  </View>
+                  <View style={styles.expandedCartSummaryRow}>
+                    <Text style={styles.expandedCartSummaryTotal}>Gesamtsumme:</Text>
+                    <Text style={styles.expandedCartSummaryTotalValue}>{getCartTotal().toFixed(2)} €</Text>
+                  </View>
+                </View>
+
+                <View style={styles.expandedCartActions}>
+                  <TouchableOpacity 
+                    style={[styles.expandedCartClearButton, cart.length === 0 && styles.disabledButton]}
+                    onPress={() => setCart([])}
+                    disabled={cart.length === 0}
+                  >
+                    <Ionicons name="trash-outline" size={18} color={cart.length === 0 ? "#9ca3af" : "#ffffff"} />
+                    <Text style={[
+                      styles.expandedCartClearText,
+                      cart.length === 0 && styles.disabledButtonText
+                    ]}>Leeren</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={[
+                      styles.expandedCartOrderButton,
+                      cart.length === 0 && styles.disabledButton
+                    ]}
+                    onPress={() => {
+                      setIsCartExpanded(false);
+                      submitOrder();
+                    }}
+                    disabled={cart.length === 0}
+                  >
+                    <Ionicons name="restaurant" size={18} color={cart.length === 0 ? "#9ca3af" : "#ffffff"} />
+                    <Text style={[
+                      styles.expandedCartOrderText,
+                      cart.length === 0 && styles.disabledButtonText
+                    ]}>
+                      Bestellen - {getCartTotal().toFixed(2)} €
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           </View>
@@ -1641,7 +1837,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 
-  // NEUE TAB NAVIGATION STYLES
+  // TAB NAVIGATION STYLES - Kompakter
   tabNavigation: {
     backgroundColor: '#ffffff',
     flexDirection: 'row',
@@ -1653,16 +1849,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    gap: 8,
+    paddingVertical: 10, // Reduziert von 16 auf 10
+    paddingHorizontal: 8, // Reduziert von 12 auf 8
+    gap: 6, // Reduziert von 8 auf 6
     backgroundColor: '#f9fafb',
   },
   tabButtonActive: {
     backgroundColor: '#007AFF',
   },
   tabButtonText: {
-    fontSize: 16,
+    fontSize: 14, // Reduziert von 16 auf 14
     fontWeight: '600',
     color: '#6b7280',
   },
@@ -1706,9 +1902,120 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingTop: 8,
   },
-  itemsRow: {
-    justifyContent: 'space-between',
+  itemRow: {
+    backgroundColor: '#ffffff',
+    borderRadius: 8, // Reduziert von 12 auf 8
+    marginVertical: 2, // Reduziert von 4 auf 2
+    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03, // Reduziert von 0.05 auf 0.03
+    shadowRadius: 1, // Reduziert von 2 auf 1
+    elevation: 1, // Reduziert von 2 auf 1
+    position: 'relative',
+  },
+  itemRowSelected: {
+    borderColor: '#007AFF',
+    backgroundColor: '#f0f9ff',
+    borderWidth: 2,
+  },
+  itemRowDisabled: {
+    backgroundColor: '#f1f5f9',
+    opacity: 0.6,
+  },
+  itemRowMainArea: {
+    flex: 1,
+    paddingRight: 60, // Platz für Config-Button
+  },
+  itemRowContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12, // Reduziert von 16 auf 12
+  },
+  itemRowInfo: {
+    flex: 1,
+    marginRight: 12, // Reduziert von 16 auf 12
+  },
+  itemRowTitle: {
+    fontSize: 15, // Reduziert von 16 auf 15
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 3, // Reduziert von 4 auf 3
+  },
+  itemRowTitleDisabled: {
+    color: '#9ca3af',
+  },
+  itemRowDescription: {
+    fontSize: 12, // Reduziert von 13 auf 12
+    color: '#6b7280',
+    lineHeight: 16, // Reduziert von 18 auf 16
+  },
+  itemRowDescriptionDisabled: {
+    color: '#9ca3af',
+  },
+  itemRowPrice: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  itemRowPriceText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#007AFF',
+    marginBottom: 4,
+  },
+  itemRowPriceDisabled: {
+    color: '#9ca3af',
+  },
+  itemRowQuantityBadge: {
+    backgroundColor: '#007AFF',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  itemRowQuantityText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  itemRowConfigButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#007AFF',
+    borderRadius: 18,
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  itemRowConfigButtonDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  itemRowUnavailableBadge: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    right: 60, // Platz für Config-Button
+    backgroundColor: '#ef4444',
+    borderRadius: 6,
     paddingHorizontal: 8,
+    paddingVertical: 4,
+    alignItems: 'center',
+  },
+  itemRowUnavailableText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '500',
   },
   itemButton: {
     backgroundColor: '#f8fafc',
@@ -1821,6 +2128,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
   },
+  cartHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   cartHeaderTitle: {
     fontSize: 18,
     fontWeight: 'bold',
@@ -1837,6 +2149,22 @@ const styles = StyleSheet.create({
   cartHeaderCount: {
     fontSize: 12,
     color: '#6b7280',
+  },
+  cartExpandButton: {
+    backgroundColor: '#f3f4f6',
+    borderRadius: 20,
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  cartSectionExpanded: {
+    flex: 0.58, // Wenn expanded, nimmt mehr Platz
+    backgroundColor: '#f8fafc',
+    borderTopWidth: 2,
+    borderTopColor: '#e2e8f0',
   },
   cartList: {
     flex: 1,
@@ -1985,6 +2313,135 @@ const styles = StyleSheet.create({
   orderButtonText: {
     color: '#ffffff',
     fontSize: 16,
+    fontWeight: 'bold',
+  },
+
+  // NEUE KOMPAKTE CART STYLES
+  cartItemCompact: {
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    marginVertical: 2,
+    marginHorizontal: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    minHeight: 50, // Kompakter
+  },
+  cartItemCompactMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingLeft: 12,
+    paddingRight: 8,
+  },
+  cartItemCompactInfo: {
+    flex: 1,
+    marginRight: 8,
+  },
+  cartItemCompactTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 2,
+  },
+  cartItemCompactConfigs: {
+    marginTop: 1,
+  },
+  cartItemCompactConfigText: {
+    fontSize: 11,
+    color: '#8b5cf6',
+    fontStyle: 'italic',
+  },
+  cartItemCompactNote: {
+    fontSize: 11,
+    color: '#f59e0b',
+    fontStyle: 'italic',
+    marginTop: 1,
+  },
+  cartItemCompactControls: {
+    alignItems: 'flex-end',
+  },
+  cartItemCompactPrice: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#007AFF',
+    marginBottom: 4,
+  },
+  cartItemCompactQuantityControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    borderRadius: 6,
+    paddingHorizontal: 2,
+  },
+  cartQuantityButtonCompact: {
+    backgroundColor: '#ffffff',
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  cartQuantityDisplayCompact: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginHorizontal: 8,
+    minWidth: 20,
+    textAlign: 'center',
+  },
+  cartItemCompactRemove: {
+    padding: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyCartCompact: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    gap: 8,
+  },
+  emptyCartTextCompact: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  cartFooterCompact: {
+    backgroundColor: '#ffffff',
+    flexDirection: 'row',
+    padding: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+    gap: 8,
+  },
+  clearCartButtonCompact: {
+    backgroundColor: '#ef4444',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 44,
+  },
+  orderButtonCompact: {
+    backgroundColor: '#10b981',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  orderButtonTextCompact: {
+    color: '#ffffff',
+    fontSize: 15,
     fontWeight: 'bold',
   },
 
@@ -2401,5 +2858,236 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+
+  // EXPANDED CART MODAL STYLES
+  expandedCartOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  expandedCartContent: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '85%',
+    flex: 1,
+  },
+  expandedCartHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  expandedCartTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  expandedCartCloseButton: {
+    padding: 4,
+  },
+  expandedCartItems: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  expandedCartItem: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    marginVertical: 6,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  expandedCartItemMain: {
+    padding: 16,
+  },
+  expandedCartItemInfo: {
+    marginBottom: 12,
+  },
+  expandedCartItemTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 8,
+  },
+  expandedCartItemConfigs: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  expandedCartItemConfigText: {
+    fontSize: 14,
+    color: '#374151',
+    marginBottom: 4,
+    lineHeight: 18,
+  },
+  expandedCartConfigLabel: {
+    fontWeight: '600',
+    color: '#8b5cf6',
+  },
+  expandedCartItemNote: {
+    backgroundColor: '#fef3c7',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 8,
+  },
+  expandedCartNoteLabel: {
+    fontWeight: '600',
+    color: '#d97706',
+  },
+  expandedCartItemPriceDetails: {
+    backgroundColor: '#f0f9ff',
+    borderRadius: 8,
+    padding: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  expandedCartItemUnitPrice: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  expandedCartItemTotalPrice: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#007AFF',
+  },
+  expandedCartItemControls: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f3f4f6',
+  },
+  expandedCartItemQuantityControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    borderRadius: 12,
+    padding: 4,
+  },
+  expandedCartQuantityButton: {
+    backgroundColor: '#ffffff',
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  expandedCartQuantityDisplay: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginHorizontal: 16,
+    minWidth: 24,
+    textAlign: 'center',
+  },
+  expandedCartItemRemove: {
+    backgroundColor: '#fee2e2',
+    borderRadius: 10,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  expandedCartEmpty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    gap: 16,
+  },
+  expandedCartEmptyText: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  expandedCartEmptySubtext: {
+    fontSize: 16,
+    color: '#9ca3af',
+  },
+  expandedCartFooter: {
+    backgroundColor: '#ffffff',
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  expandedCartSummary: {
+    marginBottom: 16,
+    padding: 16,
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+  },
+  expandedCartSummaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  expandedCartSummaryLabel: {
+    fontSize: 16,
+    color: '#6b7280',
+  },
+  expandedCartSummaryValue: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#374151',
+  },
+  expandedCartSummaryTotal: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  expandedCartSummaryTotalValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#007AFF',
+  },
+  expandedCartActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  expandedCartClearButton: {
+    backgroundColor: '#ef4444',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 0.3,
+    justifyContent: 'center',
+  },
+  expandedCartClearText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  expandedCartOrderButton: {
+    backgroundColor: '#10b981',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 0.7,
+    justifyContent: 'center',
+  },
+  expandedCartOrderText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
