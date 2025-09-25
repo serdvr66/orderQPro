@@ -328,6 +328,10 @@ export default function KellnerScreen() {
               const response = await paySession(selectedTable.code);
               if (response && response.success) {
                 loadBillingData();
+                
+                // Tischliste aktualisieren für korrekte Beträge
+                await loadTables();
+                
                 Alert.alert('Erfolg', 'Session wurde bezahlt');
               } else {
                 Alert.alert('Fehler', 'Session konnte nicht bezahlt werden');
@@ -357,6 +361,9 @@ export default function KellnerScreen() {
             try {
               const response = await endSession(selectedTable.code);
               if (response && response.success) {
+                // Tischliste neu laden BEVOR wir zurückgehen
+                await loadTables();
+                
                 Alert.alert('Erfolg', 'Session wurde beendet');
                 handleBackToTables();
               } else {
@@ -788,6 +795,9 @@ export default function KellnerScreen() {
     setBillingData(null);
     setSelectedItems([]);
     setActiveTab('order');
+    
+    // Tischliste neu laden wenn man zurück zu den Tischen geht
+    loadTables();
   };
 
   // Neue Komponente: Billing Interface
