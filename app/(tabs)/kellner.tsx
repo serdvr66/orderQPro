@@ -865,7 +865,7 @@ export default function KellnerScreen() {
           item_id: originalItemUuid,
           qty: cartItem.quantity,
           price: cartItem.price,
-          comments: cartItem.specialNote ? [cartItem.specialNote] : [],
+       comments: cartItem.specialNote ? [cartItem.specialNote] : [],
           item_configurations: Object.keys(configurations).length > 0 ? configurations : undefined,
           configuration_total: configPriceChange,
           base_price: basePrice
@@ -1242,41 +1242,40 @@ export default function KellnerScreen() {
             </View>
           ) : (
             <>
-              {/* Category Buttons mit Search */}
+              {/* Search Section - Zwischen Tabs und Kategorien */}
+              <View style={styles.searchSection}>
+                <View style={styles.searchInputContainer}>
+                  <Ionicons name="search" size={16} color="#6b7280" style={styles.searchIcon} />
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Suchen..."
+                    value={searchQuery}
+                    onChangeText={handleSearchChange}
+                    onFocus={() => {
+                      if (searchQuery.length >= 2) {
+                        setIsSearchActive(true);
+                      }
+                    }}
+                  />
+                  {searchQuery.length > 0 && (
+                    <TouchableOpacity
+                      style={styles.searchClearButton}
+                      onPress={clearSearch}
+                    >
+                      <Ionicons name="close" size={16} color="#6b7280" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              {/* Category Buttons */}
               <View style={styles.categoryContainer}>
                 <ScrollView 
                   horizontal 
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.categoryScrollContent}
                 >
-                  {/* Search Field */}
-                  <View style={styles.searchContainer}>
-                    <View style={styles.searchInputContainer}>
-                      <Ionicons name="search" size={16} color="#6b7280" style={styles.searchIcon} />
-                      <TextInput
-                        style={styles.searchInput}
-                        placeholder="Suchen..."
-                        value={searchQuery}
-                        onChangeText={handleSearchChange}
-                        onFocus={() => {
-                          if (searchQuery.length >= 2) {
-                            setIsSearchActive(true);
-                          }
-                        }}
-                      />
-                      {searchQuery.length > 0 && (
-                        <TouchableOpacity
-                          style={styles.searchClearButton}
-                          onPress={clearSearch}
-                        >
-                          <Ionicons name="close" size={16} color="#6b7280" />
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
-
-                  {/* Category Buttons - Nur anzeigen wenn nicht gesucht wird */}
-                  {!isSearchActive && processedCategories.map((category) => (
+                  {processedCategories.map((category) => (
                     <TouchableOpacity
                       key={category.id}
                       style={[
@@ -1326,12 +1325,6 @@ export default function KellnerScreen() {
                       const cartQuantity = cart
                         .filter(cartItem => cartItem.uuid.startsWith(item.uuid))
                         .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
-                      
-                      // Highlight search term in title
-                      const highlightedTitle = item.title.replace(
-                        new RegExp(`(${searchQuery})`, 'gi'),
-                        '**$1**'
-                      );
                       
                       return (
                         <View style={[
@@ -1527,7 +1520,6 @@ export default function KellnerScreen() {
           // RECHNUNG TAB - Neue Billing-Logic
           renderBillingInterface()
         )}
-
         {/* Cart Modal - Vollständiger Warenkorb Modal */}
         <Modal
           visible={isCartExpanded}
@@ -2411,6 +2403,17 @@ searchClearButton: {
   marginLeft: 8,
   padding: 2,
 },
+
+// Search Section Styles (zwischen Tabs und Kategorien):
+searchSection: {
+  backgroundColor: '#ffffff',
+  paddingHorizontal: 16,
+  paddingVertical: 12,
+  borderBottomWidth: 1,
+  borderBottomColor: '#e5e7eb',
+},
+
+
 
 searchResultsHeader: {
   backgroundColor: '#f8fafc',
@@ -3443,6 +3446,8 @@ padding: 16,
     flex: 0.3,
     justifyContent: 'center',
   },
+
+  
   expandedCartClearText: {
     color: '#ffffff',
     fontSize: 16,
