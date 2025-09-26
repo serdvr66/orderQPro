@@ -149,7 +149,7 @@ export default function KellnerScreen() {
   // UI States
   const [showOrderInterface, setShowOrderInterface] = useState(false);
   const [isCartExpanded, setIsCartExpanded] = useState(false); // Neue State für aufgeklappten Warenkorb
-  const [isCartVisible, setIsCartVisible] = useState(false); // Neue State für Warenkorb-Sichtbarkeit
+const [isCartVisible, setIsCartVisible] = useState(true); // Immer sichtbar
   const [activeTab, setActiveTab] = useState<'order' | 'billing'>('order'); // Neue Tab-State
   
   // Modal States
@@ -455,26 +455,29 @@ export default function KellnerScreen() {
   
   // Neue Funktion: Edit-Modal für Cart-Items öffnen
   const openEditModal = (cartItem: CartItem) => {
-    // Original MenuItem finden basierend auf der Cart-Item UUID
-    const originalItemUuid = cartItem.uuid.split('-{')[0];
-    const originalItem = findOriginalItemByUuid(originalItemUuid);
-    
-    if (!originalItem) {
-      Alert.alert('Fehler', 'Original-Item konnte nicht gefunden werden');
-      return;
-    }
-    
-    // Check if item has quantity > 1, then show quantity split modal
-    if (cartItem.quantity > 1) {
-      setEditingCartItem(cartItem);
-      setSplitQuantity(1);
-      setShowQuantitySplitModal(true);
-      return;
-    }
-    
-    // For quantity = 1, directly open edit modal
-    proceedWithEditModal(cartItem, cartItem.quantity);
-  };
+  // Schließe den erweiterten Warenkorb wenn Edit-Modal geöffnet wird
+  setIsCartExpanded(false);
+  
+  // Original MenuItem finden basierend auf der Cart-Item UUID
+  const originalItemUuid = cartItem.uuid.split('-{')[0];
+  const originalItem = findOriginalItemByUuid(originalItemUuid);
+  
+  if (!originalItem) {
+    Alert.alert('Fehler', 'Original-Item konnte nicht gefunden werden');
+    return;
+  }
+  
+  // Check if item has quantity > 1, then show quantity split modal
+  if (cartItem.quantity > 1) {
+    setEditingCartItem(cartItem);
+    setSplitQuantity(1);
+    setShowQuantitySplitModal(true);
+    return;
+  }
+  
+  // For quantity = 1, directly open edit modal
+  proceedWithEditModal(cartItem, cartItem.quantity);
+};
   
   // Neue Hilfsfunktion: Modal mit bestimmter Quantity öffnen
   const proceedWithEditModal = (cartItem: CartItem, quantityToEdit: number) => {
@@ -1309,24 +1312,7 @@ export default function KellnerScreen() {
               </View>
 
              {/* Kompakter Live Cart Section - Nur wenn sichtbar */}
-{/* Floating Cart Button wenn geschlossen */}
-              {!isCartVisible && (
-  <TouchableOpacity 
-    style={styles.floatingCartButton}
-    onPress={() => {
-      setIsCartVisible(true);
-      setIsCartExpanded(true);
-    }}
-  >
-                  <View style={styles.floatingCartContent}>
-                    <Ionicons name="basket" size={24} color="#ffffff" />
-                    <View style={styles.floatingCartInfo}>
-                      <Text style={styles.floatingCartTotal}>{getCartTotal().toFixed(2)} €</Text>
-                      <Text style={styles.floatingCartCount}>({getCartItemCount()} Items)</Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              )}
+
 
               {/* Kompakter Live Cart Section - Nur wenn sichtbar */}
               {isCartVisible && (
@@ -1463,8 +1449,9 @@ export default function KellnerScreen() {
                 )}
 
                 {/* Kompakte Order Buttons */}
-                <View style={styles.cartFooterCompact}>
-                  <TouchableOpacity 
+{/* Kompakte Order Buttons */}
+{isCartExpanded && (
+  <View style={styles.cartFooterCompact}>                  <TouchableOpacity 
                     style={[styles.clearCartButtonCompact, cart.length === 0 && styles.disabledButton]}
                     onPress={() => setCart([])}
                     disabled={cart.length === 0}
@@ -1489,6 +1476,7 @@ export default function KellnerScreen() {
                     </Text>
                   </TouchableOpacity>
                 </View>
+                )}
               </View>
               )}
             </>
@@ -1679,7 +1667,7 @@ export default function KellnerScreen() {
 
               {/* Cart Items */}
               <View style={styles.expandedCartItems}>
-                {cart.length > 0 ? (
+{isCartExpanded && cart.length > 0 ? (
                   <FlatList
                     data={cart}
                     keyExtractor={(item) => item.uuid}
