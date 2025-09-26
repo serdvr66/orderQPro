@@ -151,6 +151,11 @@ export default function KellnerScreen() {
   const [isCartExpanded, setIsCartExpanded] = useState(false); // Standardmäßig geschlossen
   const [activeTab, setActiveTab] = useState<'order' | 'billing'>('order'); // Neue Tab-State
   
+  // Search States
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchActive, setIsSearchActive] = useState(false);
+  const [searchResults, setSearchResults] = useState<MenuItem[]>([]);
+  
   // Modal States
   const [showItemModal, setShowItemModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
@@ -860,7 +865,7 @@ export default function KellnerScreen() {
           item_id: originalItemUuid,
           qty: cartItem.quantity,
           price: cartItem.price,
-       comments: cartItem.specialNote ? [cartItem.specialNote] : [],
+          comments: cartItem.specialNote ? [cartItem.specialNote] : [],
           item_configurations: Object.keys(configurations).length > 0 ? configurations : undefined,
           configuration_total: configPriceChange,
           base_price: basePrice
@@ -924,6 +929,43 @@ export default function KellnerScreen() {
     
     // Tischliste neu laden wenn man zurück zu den Tischen geht
     loadTables();
+  };
+
+  // Neue Such-Funktionen - Diese NACH handleBackToTables() einfügen:
+  const handleSearchChange = (query: string) => {
+    setSearchQuery(query);
+    
+    if (query.length < 2) {
+      setSearchResults([]);
+      setIsSearchActive(false);
+      return;
+    }
+    
+    setIsSearchActive(true);
+    
+    // Suche durch alle Items in allen Kategorien
+    const allItems: MenuItem[] = [];
+    processedCategories.forEach(category => {
+      category.items.forEach(item => {
+        if (item.is_enabled && !item.is_disabled && !item.sold_out) {
+          allItems.push(item);
+        }
+      });
+    });
+    
+    // Filtere Items basierend auf Suchbegriff - mit null-check für description
+    const filtered = allItems.filter(item => 
+      item.title.toLowerCase().includes(query.toLowerCase()) ||
+      (item.description && item.description.toLowerCase().includes(query.toLowerCase()))
+    );
+    
+    setSearchResults(filtered);
+  };
+
+  const clearSearch = () => {
+    setSearchQuery('');
+    setIsSearchActive(false);
+    setSearchResults([]);
   };
 
   // Neue Komponente: Billing Interface - Vereinfacht ohne Kunden-Trennung
@@ -1200,14 +1242,41 @@ export default function KellnerScreen() {
             </View>
           ) : (
             <>
-              {/* Category Buttons */}
+              {/* Category Buttons mit Search */}
               <View style={styles.categoryContainer}>
                 <ScrollView 
                   horizontal 
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.categoryScrollContent}
                 >
-                  {processedCategories.map((category) => (
+                  {/* Search Field */}
+                  <View style={styles.searchContainer}>
+                    <View style={styles.searchInputContainer}>
+                      <Ionicons name="search" size={16} color="#6b7280" style={styles.searchIcon} />
+                      <TextInput
+                        style={styles.searchInput}
+                        placeholder="Suchen..."
+                        value={searchQuery}
+                        onChangeText={handleSearchChange}
+                        onFocus={() => {
+                          if (searchQuery.length >= 2) {
+                            setIsSearchActive(true);
+                          }
+                        }}
+                      />
+                      {searchQuery.length > 0 && (
+                        <TouchableOpacity
+                          style={styles.searchClearButton}
+                          onPress={clearSearch}
+                        >
+                          <Ionicons name="close" size={16} color="#6b7280" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* Category Buttons - Nur anzeigen wenn nicht gesucht wird */}
+                  {!isSearchActive && processedCategories.map((category) => (
                     <TouchableOpacity
                       key={category.id}
                       style={[
@@ -1229,51 +1298,65 @@ export default function KellnerScreen() {
 
               {/* Items List - 100% des verfügbaren Platzes */}
               <View style={styles.itemsContainer}>
-                {selectedCategory && (
+                {/* Suche-Ergebnisse oder normale Kategorie-Items */}
+                {isSearchActive ? (
+                  // Search Results
                   <FlatList
-                    data={selectedCategory.items}
+                    data={searchResults}
                     keyExtractor={(item) => item.uuid}
+                    ListHeaderComponent={() => (
+                      <View style={styles.searchResultsHeader}>
+                        <Text style={styles.searchResultsText}>
+                          {searchResults.length} Ergebnis{searchResults.length !== 1 ? 'se' : ''} für "{searchQuery}"
+                        </Text>
+                      </View>
+                    )}
+                    ListEmptyComponent={() => (
+                      <View style={styles.emptySearchResults}>
+                        <Ionicons name="search-outline" size={48} color="#9ca3af" />
+                        <Text style={styles.emptySearchText}>
+                          Keine Ergebnisse für "{searchQuery}"
+                        </Text>
+                        <Text style={styles.emptySearchSubtext}>
+                          Versuchen Sie andere Suchbegriffe
+                        </Text>
+                      </View>
+                    )}
                     renderItem={({ item }) => {
                       const cartQuantity = cart
                         .filter(cartItem => cartItem.uuid.startsWith(item.uuid))
                         .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
-                      const isUnavailable = item.sold_out || item.is_disabled;
+                      
+                      // Highlight search term in title
+                      const highlightedTitle = item.title.replace(
+                        new RegExp(`(${searchQuery})`, 'gi'),
+                        '**$1**'
+                      );
                       
                       return (
                         <View style={[
                           styles.itemRow,
-                          isUnavailable && styles.itemRowDisabled,
                           cartQuantity > 0 && styles.itemRowSelected
                         ]}>
                           <TouchableOpacity
                             style={styles.itemRowMainArea}
-                            onPress={() => !isUnavailable && addItemDirectly(item)}
-                            disabled={isUnavailable}
+                            onPress={() => addItemDirectly(item)}
                           >
                             <View style={styles.itemRowContent}>
                               <View style={styles.itemRowInfo}>
-                                <Text style={[
-                                  styles.itemRowTitle,
-                                  isUnavailable && styles.itemRowTitleDisabled
-                                ]} numberOfLines={2}>
+                                <Text style={styles.itemRowTitle} numberOfLines={2}>
                                   {item.title}
                                 </Text>
                                 
                                 {item.description && (
-                                  <Text style={[
-                                    styles.itemRowDescription,
-                                    isUnavailable && styles.itemRowDescriptionDisabled
-                                  ]} numberOfLines={1}>
+                                  <Text style={styles.itemRowDescription} numberOfLines={1}>
                                     {item.description}
                                   </Text>
                                 )}
                               </View>
                               
                               <View style={styles.itemRowPrice}>
-                                <Text style={[
-                                  styles.itemRowPriceText,
-                                  isUnavailable && styles.itemRowPriceDisabled
-                                ]}>
+                                <Text style={styles.itemRowPriceText}>
                                   {Number(item.price || 0).toFixed(2)} €
                                 </Text>
                                 
@@ -1287,27 +1370,97 @@ export default function KellnerScreen() {
                           </TouchableOpacity>
 
                           <TouchableOpacity
-                            style={[
-                              styles.itemRowConfigButton,
-                              isUnavailable && styles.itemRowConfigButtonDisabled
-                            ]}
-                            onPress={() => !isUnavailable && openItemModal(item)}
-                            disabled={isUnavailable}
+                            style={styles.itemRowConfigButton}
+                            onPress={() => openItemModal(item)}
                           >
                             <Ionicons name="create-outline" size={20} color="#ffffff" />
                           </TouchableOpacity>
-                          
-                          {isUnavailable && (
-                            <View style={styles.itemRowUnavailableBadge}>
-                              <Text style={styles.itemRowUnavailableText}>
-                                {item.sold_out ? 'Ausverkauft' : 'Nicht verfügbar'}
-                              </Text>
-                            </View>
-                          )}
                         </View>
                       );
                     }}
                   />
+                ) : (
+                  // Normal Category Items
+                  selectedCategory && (
+                    <FlatList
+                      data={selectedCategory.items}
+                      keyExtractor={(item) => item.uuid}
+                      renderItem={({ item }) => {
+                        const cartQuantity = cart
+                          .filter(cartItem => cartItem.uuid.startsWith(item.uuid))
+                          .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
+                        const isUnavailable = item.sold_out || item.is_disabled;
+                        
+                        return (
+                          <View style={[
+                            styles.itemRow,
+                            isUnavailable && styles.itemRowDisabled,
+                            cartQuantity > 0 && styles.itemRowSelected
+                          ]}>
+                            <TouchableOpacity
+                              style={styles.itemRowMainArea}
+                              onPress={() => !isUnavailable && addItemDirectly(item)}
+                              disabled={isUnavailable}
+                            >
+                              <View style={styles.itemRowContent}>
+                                <View style={styles.itemRowInfo}>
+                                  <Text style={[
+                                    styles.itemRowTitle,
+                                    isUnavailable && styles.itemRowTitleDisabled
+                                  ]} numberOfLines={2}>
+                                    {item.title}
+                                  </Text>
+                                  
+                                  {item.description && (
+                                    <Text style={[
+                                      styles.itemRowDescription,
+                                      isUnavailable && styles.itemRowDescriptionDisabled
+                                    ]} numberOfLines={1}>
+                                      {item.description}
+                                    </Text>
+                                  )}
+                                </View>
+                                
+                                <View style={styles.itemRowPrice}>
+                                  <Text style={[
+                                    styles.itemRowPriceText,
+                                    isUnavailable && styles.itemRowPriceDisabled
+                                  ]}>
+                                    {Number(item.price || 0).toFixed(2)} €
+                                  </Text>
+                                  
+                                  {cartQuantity > 0 && (
+                                    <View style={styles.itemRowQuantityBadge}>
+                                      <Text style={styles.itemRowQuantityText}>{cartQuantity}</Text>
+                                    </View>
+                                  )}
+                                </View>
+                              </View>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={[
+                                styles.itemRowConfigButton,
+                                isUnavailable && styles.itemRowConfigButtonDisabled
+                              ]}
+                              onPress={() => !isUnavailable && openItemModal(item)}
+                              disabled={isUnavailable}
+                            >
+                              <Ionicons name="create-outline" size={20} color="#ffffff" />
+                            </TouchableOpacity>
+                            
+                            {isUnavailable && (
+                              <View style={styles.itemRowUnavailableBadge}>
+                                <Text style={styles.itemRowUnavailableText}>
+                                  {item.sold_out ? 'Ausverkauft' : 'Nicht verfügbar'}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                        );
+                      }}
+                    />
+                  )
                 )}
               </View>
 
@@ -2224,6 +2377,75 @@ cartQuickOrderButton: {
   alignItems: 'center',
   justifyContent: 'center',
   marginRight: 8,
+},
+
+// Search Styles:
+searchContainer: {
+  marginRight: 12,
+},
+
+searchInputContainer: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#f3f4f6',
+  borderRadius: 20,
+  paddingHorizontal: 12,
+  paddingVertical: 8,
+  minWidth: 150,
+  borderWidth: 1,
+  borderColor: '#e5e7eb',
+},
+
+searchIcon: {
+  marginRight: 8,
+},
+
+searchInput: {
+  flex: 1,
+  fontSize: 14,
+  color: '#374151',
+  paddingVertical: 0,
+},
+
+searchClearButton: {
+  marginLeft: 8,
+  padding: 2,
+},
+
+searchResultsHeader: {
+  backgroundColor: '#f8fafc',
+  paddingHorizontal: 16,
+  paddingVertical: 12,
+  borderBottomWidth: 1,
+  borderBottomColor: '#e5e7eb',
+  marginBottom: 8,
+},
+
+searchResultsText: {
+  fontSize: 14,
+  fontWeight: '600',
+  color: '#374151',
+},
+
+emptySearchResults: {
+  flex: 1,
+  alignItems: 'center',
+  justifyContent: 'center',
+  paddingVertical: 60,
+  gap: 12,
+},
+
+emptySearchText: {
+  fontSize: 18,
+  fontWeight: '600',
+  color: '#6b7280',
+  textAlign: 'center',
+},
+
+emptySearchSubtext: {
+  fontSize: 14,
+  color: '#9ca3af',
+  textAlign: 'center',
 },
   
   cartHeader: {
