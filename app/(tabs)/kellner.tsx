@@ -2179,7 +2179,6 @@ const styles = StyleSheet.create({
   backgroundColor: '#ffffff',
   paddingHorizontal: 8,
   paddingTop: 8,
-  paddingBottom: 100, // Platz für floating button
 },
   itemRow: {
     backgroundColor: '#ffffff',
