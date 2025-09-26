@@ -1,4 +1,4 @@
-// app/(tabs)/kellner.tsx - Mit Tab Navigation für Bestellen und Rechnung
+// app/(tabs)/kellner.tsx - Mit Tab Navigation für Bestellen und Rechnung + Edit-Buttons
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -149,6 +149,7 @@ export default function KellnerScreen() {
   // UI States
   const [showOrderInterface, setShowOrderInterface] = useState(false);
   const [isCartExpanded, setIsCartExpanded] = useState(false); // Neue State für aufgeklappten Warenkorb
+  const [isCartVisible, setIsCartVisible] = useState(false); // Neue State für Warenkorb-Sichtbarkeit
   const [activeTab, setActiveTab] = useState<'order' | 'billing'>('order'); // Neue Tab-State
   
   // Modal States
@@ -158,6 +159,12 @@ export default function KellnerScreen() {
   const [specialNote, setSpecialNote] = useState('');
   const [selectedConfigurations, setSelectedConfigurations] = useState<SelectedConfiguration>({});
   const [modalTotalPrice, setModalTotalPrice] = useState(0);
+  
+  // Edit Modal States
+  const [isEditingCartItem, setIsEditingCartItem] = useState(false);
+  const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
+  const [showQuantitySplitModal, setShowQuantitySplitModal] = useState(false);
+  const [splitQuantity, setSplitQuantity] = useState(1);
 
   // API Hooks - Erweitert mit Billing-Funktionen
   const { 
@@ -444,7 +451,63 @@ export default function KellnerScreen() {
     return processed.sort((a, b) => (a.order || 0) - (b.order || 0));
   };
 
-  // BESTEHENDE ORDER-FUNKTIONEN (unverändert)
+  // BESTEHENDE ORDER-FUNKTIONEN + NEUE EDIT-FUNKTIONEN
+  
+  // Neue Funktion: Edit-Modal für Cart-Items öffnen
+  const openEditModal = (cartItem: CartItem) => {
+    // Original MenuItem finden basierend auf der Cart-Item UUID
+    const originalItemUuid = cartItem.uuid.split('-{')[0];
+    const originalItem = findOriginalItemByUuid(originalItemUuid);
+    
+    if (!originalItem) {
+      Alert.alert('Fehler', 'Original-Item konnte nicht gefunden werden');
+      return;
+    }
+    
+    // Check if item has quantity > 1, then show quantity split modal
+    if (cartItem.quantity > 1) {
+      setEditingCartItem(cartItem);
+      setSplitQuantity(1);
+      setShowQuantitySplitModal(true);
+      return;
+    }
+    
+    // For quantity = 1, directly open edit modal
+    proceedWithEditModal(cartItem, cartItem.quantity);
+  };
+  
+  // Neue Hilfsfunktion: Modal mit bestimmter Quantity öffnen
+  const proceedWithEditModal = (cartItem: CartItem, quantityToEdit: number) => {
+    const originalItemUuid = cartItem.uuid.split('-{')[0];
+    const originalItem = findOriginalItemByUuid(originalItemUuid);
+    
+    if (!originalItem) return;
+    
+    // Edit-Modus aktivieren
+    setIsEditingCartItem(true);
+    setEditingCartItem(cartItem);
+    
+    // Modal mit bestehenden Werten vorausfüllen, aber mit der zu editierenden Quantity
+    setSelectedItem(originalItem);
+    setModalQuantity(quantityToEdit);
+    setSpecialNote(cartItem.specialNote || '');
+    
+    // Bestehende Konfigurationen setzen
+    if (cartItem.configurations) {
+      setSelectedConfigurations(cartItem.configurations);
+    } else {
+      setSelectedConfigurations({});
+    }
+    
+    // Preis berechnen
+    calculateModalPrice(originalItem, quantityToEdit, cartItem.configurations || {});
+    
+    // Modal öffnen
+    setShowItemModal(true);
+    setShowQuantitySplitModal(false);
+  };
+  
+  // Bestehende addItemDirectly Funktion bleibt unverändert
   const addItemDirectly = (item: MenuItem) => {
     const basePrice = Number(item.price) || 0;
     let configPriceChange = 0;
@@ -510,6 +573,10 @@ export default function KellnerScreen() {
   };
 
   const openItemModal = (item: MenuItem) => {
+    // Reset edit state - wir öffnen für neues Item
+    setIsEditingCartItem(false);
+    setEditingCartItem(null);
+    
     setSelectedItem(item);
     setModalQuantity(1);
     setSpecialNote('');
@@ -623,31 +690,86 @@ export default function KellnerScreen() {
     }
 
     const finalPrice = basePrice + configPriceChange;
-    const cartItemId = `${selectedItem.uuid}-${JSON.stringify(selectedConfigurations)}-${specialNote}`;
     
-    const existingItemIndex = cart.findIndex(cartItem => 
-      cartItem.uuid === selectedItem.uuid &&
-      JSON.stringify(cartItem.configurations) === JSON.stringify(selectedConfigurations) &&
-      cartItem.specialNote === specialNote
-    );
-    
-    if (existingItemIndex >= 0) {
-      const updatedCart = [...cart];
-      updatedCart[existingItemIndex].quantity += modalQuantity;
-      updatedCart[existingItemIndex].total = updatedCart[existingItemIndex].quantity * finalPrice;
-      setCart(updatedCart);
-    } else {
+    // Check if we're editing an existing cart item
+    if (isEditingCartItem && editingCartItem) {
+      const editQuantity = modalQuantity;
+      const remainingQuantity = editingCartItem.quantity - editQuantity;
+      
+      // Create new item with edited properties
+      const newCartItemId = `${selectedItem.uuid}-${JSON.stringify(selectedConfigurations)}-${specialNote}-${Date.now()}`;
       const newItem: CartItem = {
-        uuid: cartItemId,
+        uuid: newCartItemId,
         title: selectedItem.title,
         price: finalPrice,
-        quantity: modalQuantity,
-        total: finalPrice * modalQuantity,
+        quantity: editQuantity,
+        total: finalPrice * editQuantity,
         specialNote: specialNote || undefined,
         configurations: Object.keys(selectedConfigurations).length > 0 ? selectedConfigurations : undefined,
         configurationPriceChange: configPriceChange
       };
-      setCart([...cart, newItem]);
+      
+      // Update cart
+      let updatedCart = [...cart];
+      
+      if (remainingQuantity > 0) {
+        // Update original item with reduced quantity
+        updatedCart = updatedCart.map(cartItem => {
+          if (cartItem.uuid === editingCartItem.uuid) {
+            return {
+              ...cartItem,
+              quantity: remainingQuantity,
+              total: cartItem.price * remainingQuantity
+            };
+          }
+          return cartItem;
+        });
+        
+        // Add new item with changes
+        updatedCart.push(newItem);
+      } else {
+        // Replace original item completely (when all quantity is edited)
+        updatedCart = updatedCart.map(cartItem => {
+          if (cartItem.uuid === editingCartItem.uuid) {
+            return newItem;
+          }
+          return cartItem;
+        });
+      }
+      
+      setCart(updatedCart);
+      
+      // Reset edit state
+      setIsEditingCartItem(false);
+      setEditingCartItem(null);
+    } else {
+      // Add new item to cart (original logic)
+      const cartItemId = `${selectedItem.uuid}-${JSON.stringify(selectedConfigurations)}-${specialNote}`;
+      
+      const existingItemIndex = cart.findIndex(cartItem => 
+        cartItem.uuid === selectedItem.uuid &&
+        JSON.stringify(cartItem.configurations) === JSON.stringify(selectedConfigurations) &&
+        cartItem.specialNote === specialNote
+      );
+      
+      if (existingItemIndex >= 0) {
+        const updatedCart = [...cart];
+        updatedCart[existingItemIndex].quantity += modalQuantity;
+        updatedCart[existingItemIndex].total = updatedCart[existingItemIndex].quantity * finalPrice;
+        setCart(updatedCart);
+      } else {
+        const newItem: CartItem = {
+          uuid: cartItemId,
+          title: selectedItem.title,
+          price: finalPrice,
+          quantity: modalQuantity,
+          total: finalPrice * modalQuantity,
+          specialNote: specialNote || undefined,
+          configurations: Object.keys(selectedConfigurations).length > 0 ? selectedConfigurations : undefined,
+          configurationPriceChange: configPriceChange
+        };
+        setCart([...cart, newItem]);
+      }
     }
 
     setShowItemModal(false);
@@ -801,7 +923,7 @@ export default function KellnerScreen() {
     loadTables();
   };
 
-  // Neue Komponente: Billing Interface
+  // Neue Komponente: Billing Interface - Vereinfacht ohne Kunden-Trennung
   const renderBillingInterface = () => {
     if (isLoadingBilling) {
       return (
@@ -820,6 +942,9 @@ export default function KellnerScreen() {
         </View>
       );
     }
+
+    // Alle Items aus allen Kunden in eine Liste zusammenfassen
+    const allItems = billingData.customers.flatMap(customer => customer.items);
 
     return (
       <View style={styles.billingContainer}>
@@ -846,111 +971,109 @@ export default function KellnerScreen() {
           </View>
         </View>
 
-        {/* Items List */}
+        {/* Simplified Items List - No Customer Separation */}
         <ScrollView style={styles.billingItemsList}>
-          {billingData.customers.map((customer, customerIndex) => (
-            <View key={customer.session_id} style={styles.customerSection}>
-              <View style={styles.customerHeader}>
-                <Ionicons name="person" size={20} color="#007AFF" />
-                <Text style={styles.customerTitle}>Kunde {customer.customer_number}</Text>
-              </View>
-              
-              {customer.items.map((item, itemIndex) => (
-                <View key={item.uuid} style={styles.billingItem}>
-                  <View style={styles.billingItemCheckbox}>
-                    <TouchableOpacity
-                      style={[
-                        styles.checkbox,
-                        selectedItems.includes(item.uuid) && styles.checkboxSelected
-                      ]}
-                      onPress={() => {
-                        if (selectedItems.includes(item.uuid)) {
-                          setSelectedItems(selectedItems.filter(id => id !== item.uuid));
-                        } else {
-                          setSelectedItems([...selectedItems, item.uuid]);
-                        }
-                      }}
-                    >
-                      {selectedItems.includes(item.uuid) && (
-                        <Ionicons name="checkmark" size={16} color="#ffffff" />
-                      )}
-                    </TouchableOpacity>
-                  </View>
+          <View style={styles.allItemsSection}>
+            <View style={styles.allItemsHeader}>
+              <Ionicons name="receipt" size={20} color="#007AFF" />
+              <Text style={styles.allItemsTitle}>Alle Bestellungen</Text>
+            </View>
+            
+            {allItems.map((item, itemIndex) => (
+              <View key={item.uuid} style={styles.billingItem}>
+                <View style={styles.billingItemCheckbox}>
+                  <TouchableOpacity
+                    style={[
+                      styles.checkbox,
+                      selectedItems.includes(item.uuid) && styles.checkboxSelected
+                    ]}
+                    onPress={() => {
+                      if (selectedItems.includes(item.uuid)) {
+                        setSelectedItems(selectedItems.filter(id => id !== item.uuid));
+                      } else {
+                        setSelectedItems([...selectedItems, item.uuid]);
+                      }
+                    }}
+                  >
+                    {selectedItems.includes(item.uuid) && (
+                      <Ionicons name="checkmark" size={16} color="#ffffff" />
+                    )}
+                  </TouchableOpacity>
+                </View>
+                
+                <View style={styles.billingItemInfo}>
+                  <Text style={[
+                    styles.billingItemTitle,
+                    item.is_paid && styles.paidItemTitle
+                  ]}>
+                    {item.title}
+                  </Text>
                   
-                  <View style={styles.billingItemInfo}>
-                    <Text style={[
-                      styles.billingItemTitle,
-                      item.is_paid && styles.paidItemTitle
-                    ]}>
-                      {item.title}
-                    </Text>
-                    
-                    <View style={styles.billingItemDetails}>
-                      <Text style={styles.billingItemCategory}>{item.category}</Text>
-                      {item.is_added_by_staff && (
-                        <View style={styles.staffBadge}>
-                          <Text style={styles.staffBadgeText}>Staff</Text>
-                        </View>
-                      )}
-                      {item.is_paid && (
-                        <View style={styles.paidBadge}>
-                          <Text style={styles.paidBadgeText}>Bezahlt</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    {/* Show configurations if any */}
-                    {item.configurations && (
-                      <View style={styles.itemConfigurations}>
-                        {item.configurations.singles && Object.entries(item.configurations.singles).map(([key, config]: [string, any]) => (
-                          <Text key={key} style={styles.configurationText}>
-                            {key}: {config.value}
-                          </Text>
-                        ))}
-                        {item.configurations.multiples && Object.entries(item.configurations.multiples).map(([key, configs]: [string, any]) => (
-                          <View key={key}>
-                            <Text style={styles.configurationText}>{key}: {configs.map((c: any) => c.title).join(', ')}</Text>
-                          </View>
-                        ))}
+                  <View style={styles.billingItemDetails}>
+                    <Text style={styles.billingItemCategory}>{item.category}</Text>
+                    {item.is_added_by_staff && (
+                      <View style={styles.staffBadge}>
+                        <Text style={styles.staffBadgeText}>Staff</Text>
+                      </View>
+                    )}
+                    {item.is_paid && (
+                      <View style={styles.paidBadge}>
+                        <Text style={styles.paidBadgeText}>Bezahlt</Text>
                       </View>
                     )}
                   </View>
-                  
-                  <View style={styles.billingItemPrice}>
-                    <Text style={[
-                      styles.itemPriceText,
-                      item.is_paid && styles.paidItemPrice
-                    ]}>
-                      €{item.price.toFixed(2)}
-                    </Text>
-                  </View>
-                  
-                  <View style={styles.billingItemActions}>
-                    <TouchableOpacity
-                      style={[
-                        styles.actionButton,
-                        item.is_paid ? styles.unpayButton : styles.payButton
-                      ]}
-                      onPress={() => handleToggleItemPaid(item.uuid)}
-                    >
-                      <Ionicons 
-                        name={item.is_paid ? "arrow-undo" : "card"} 
-                        size={16} 
-                        color="#ffffff" 
-                      />
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity
-                      style={[styles.actionButton, styles.cancelButton]}
-                      onPress={() => handleCancelItem(item.uuid)}
-                    >
-                      <Ionicons name="close" size={16} color="#ffffff" />
-                    </TouchableOpacity>
-                  </View>
+
+                  {/* Show configurations if any */}
+                  {item.configurations && (
+                    <View style={styles.itemConfigurations}>
+                      {item.configurations.singles && Object.entries(item.configurations.singles).map(([key, config]: [string, any]) => (
+                        <Text key={key} style={styles.configurationText}>
+                          {key}: {config.value}
+                        </Text>
+                      ))}
+                      {item.configurations.multiples && Object.entries(item.configurations.multiples).map(([key, configs]: [string, any]) => (
+                        <View key={key}>
+                          <Text style={styles.configurationText}>{key}: {configs.map((c: any) => c.title).join(', ')}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
                 </View>
-              ))}
-            </View>
-          ))}
+                
+                <View style={styles.billingItemPrice}>
+                  <Text style={[
+                    styles.itemPriceText,
+                    item.is_paid && styles.paidItemPrice
+                  ]}>
+                    €{item.price.toFixed(2)}
+                  </Text>
+                </View>
+                
+                <View style={styles.billingItemActions}>
+                  <TouchableOpacity
+                    style={[
+                      styles.actionButton,
+                      item.is_paid ? styles.unpayButton : styles.payButton
+                    ]}
+                    onPress={() => handleToggleItemPaid(item.uuid)}
+                  >
+                    <Ionicons 
+                      name={item.is_paid ? "arrow-undo" : "card"} 
+                      size={16} 
+                      color="#ffffff" 
+                    />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[styles.actionButton, styles.cancelButton]}
+                    onPress={() => handleCancelItem(item.uuid)}
+                  >
+                    <Ionicons name="close" size={16} color="#ffffff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </View>
         </ScrollView>
 
         {/* Action Buttons */}
@@ -1185,28 +1308,60 @@ export default function KellnerScreen() {
                 )}
               </View>
 
-              {/* Kompakter Live Cart Section - Mit Expand-Option */}
-              <View style={isCartExpanded ? styles.cartSectionExpanded : styles.cartSection}>
+             {/* Kompakter Live Cart Section - Nur wenn sichtbar */}
+{/* Floating Cart Button wenn geschlossen */}
+              {!isCartVisible && (
+  <TouchableOpacity 
+    style={styles.floatingCartButton}
+    onPress={() => {
+      setIsCartVisible(true);
+      setIsCartExpanded(true);
+    }}
+  >
+                  <View style={styles.floatingCartContent}>
+                    <Ionicons name="basket" size={24} color="#ffffff" />
+                    <View style={styles.floatingCartInfo}>
+                      <Text style={styles.floatingCartTotal}>{getCartTotal().toFixed(2)} €</Text>
+                      <Text style={styles.floatingCartCount}>({getCartItemCount()} Items)</Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              )}
+
+              {/* Kompakter Live Cart Section - Nur wenn sichtbar */}
+              {isCartVisible && (
+                <View style={isCartExpanded ? styles.cartSectionExpanded : styles.cartSection}>
                 <View style={styles.cartHeader}>
                   <Text style={styles.cartHeaderTitle}>Warenkorb</Text>
-                  <View style={styles.cartHeaderActions}>
-                    <View style={styles.cartHeaderSummary}>
-                      <Text style={styles.cartHeaderTotal}>{getCartTotal().toFixed(2)} €</Text>
-                      <Text style={styles.cartHeaderCount}>({getCartItemCount()} Items)</Text>
-                    </View>
-                    
-                    {/* Expand/Collapse Button */}
-                    <TouchableOpacity
-                      style={styles.cartExpandButton}
-                      onPress={() => setIsCartExpanded(!isCartExpanded)}
-                    >
-                      <Ionicons 
-                        name={isCartExpanded ? "chevron-down" : "chevron-up"} 
-                        size={20} 
-                        color="#007AFF" 
-                      />
-                    </TouchableOpacity>
-                  </View>
+                 <View style={styles.cartHeaderActions}>
+  <View style={styles.cartHeaderSummary}>
+    <Text style={styles.cartHeaderTotal}>{getCartTotal().toFixed(2)} €</Text>
+    <Text style={styles.cartHeaderCount}>({getCartItemCount()} Items)</Text>
+  </View>
+  
+  {/* Expand/Collapse Button */}
+  <TouchableOpacity
+    style={styles.cartExpandButton}
+    onPress={() => setIsCartExpanded(!isCartExpanded)}
+  >
+    <Ionicons 
+      name={isCartExpanded ? "chevron-down" : "chevron-up"} 
+      size={20} 
+      color="#007AFF" 
+    />
+  </TouchableOpacity>
+  
+  {/* Close Button */}
+ <TouchableOpacity
+  style={styles.cartCloseButton}
+  onPress={() => {
+    setIsCartVisible(false);
+    setIsCartExpanded(false);
+  }}
+>
+    <Ionicons name="close" size={20} color="#ef4444" />
+  </TouchableOpacity>
+</View>
                 </View>
 
                 {cart.length > 0 ? (
@@ -1275,16 +1430,28 @@ export default function KellnerScreen() {
                           </View>
                         </View>
 
-                        {/* Kompakter Remove Button */}
-                        <TouchableOpacity
-                          style={styles.cartItemCompactRemove}
-                          onPress={() => {
-                            const updatedCart = cart.filter(cartItem => cartItem.uuid !== item.uuid);
-                            setCart(updatedCart);
-                          }}
-                        >
-                          <Ionicons name="close" size={14} color="#ef4444" />
-                        </TouchableOpacity>
+                        {/* Edit und Remove Buttons */}
+                        <View style={styles.cartItemCompactActions}>
+                         <TouchableOpacity
+  style={styles.cartItemCompactEdit}
+  onPress={() => {
+    console.log('Edit button clicked for item:', item.title);
+    openEditModal(item);
+  }}
+>
+  <Ionicons name="create-outline" size={14} color="#007AFF" />
+</TouchableOpacity>
+
+                          <TouchableOpacity
+                            style={styles.cartItemCompactRemove}
+                            onPress={() => {
+                              const updatedCart = cart.filter(cartItem => cartItem.uuid !== item.uuid);
+                              setCart(updatedCart);
+                            }}
+                          >
+                            <Ionicons name="close" size={14} color="#ef4444" />
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     )}
                   />
@@ -1323,6 +1490,7 @@ export default function KellnerScreen() {
                   </TouchableOpacity>
                 </View>
               </View>
+              )}
             </>
           )
         ) : (
@@ -1343,9 +1511,21 @@ export default function KellnerScreen() {
                 {selectedItem && (
                   <>
                     <View style={styles.modalHeader}>
+                      <View style={styles.modalHeaderLeft}>
+                        <Text style={styles.modalHeaderTitle}>
+                          {isEditingCartItem ? "Item bearbeiten" : "Item hinzufügen"}
+                        </Text>
+                      </View>
                       <TouchableOpacity
                         style={styles.modalCloseButton}
-                        onPress={() => setShowItemModal(false)}
+                        onPress={() => {
+                          setShowItemModal(false);
+                          // Reset edit state when closing modal
+                          if (isEditingCartItem) {
+                            setIsEditingCartItem(false);
+                            setEditingCartItem(null);
+                          }
+                        }}
                       >
                         <Ionicons name="close" size={24} color="#666" />
                       </TouchableOpacity>
@@ -1358,6 +1538,14 @@ export default function KellnerScreen() {
                       </Text>
                       {selectedItem.description && (
                         <Text style={styles.modalItemDescription}>{selectedItem.description}</Text>
+                      )}
+                      
+                      {/* Edit-Modus Indikator */}
+                      {isEditingCartItem && (
+                        <View style={styles.editModeIndicator}>
+                          <Ionicons name="create-outline" size={16} color="#007AFF" />
+                          <Text style={styles.editModeText}>Bearbeiten</Text>
+                        </View>
                       )}
                     </View>
 
@@ -1458,7 +1646,10 @@ export default function KellnerScreen() {
                   onPress={addItemToCart}
                 >
                   <Text style={styles.addToCartButtonText}>
-                    Hinzufügen - {modalTotalPrice.toFixed(2)} €
+                    {isEditingCartItem 
+                      ? `Aktualisieren - ${modalTotalPrice.toFixed(2)} €`
+                      : `Hinzufügen - ${modalTotalPrice.toFixed(2)} €`
+                    }
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -1557,16 +1748,25 @@ export default function KellnerScreen() {
                               </TouchableOpacity>
                             </View>
                             
-                            {/* Remove Button */}
-                            <TouchableOpacity
-                              style={styles.expandedCartItemRemove}
-                              onPress={() => {
-                                const updatedCart = cart.filter(cartItem => cartItem.uuid !== item.uuid);
-                                setCart(updatedCart);
-                              }}
-                            >
-                              <Ionicons name="trash-outline" size={20} color="#ef4444" />
-                            </TouchableOpacity>
+                            {/* Edit und Remove Buttons */}
+                            <View style={styles.expandedCartItemActions}>
+                              <TouchableOpacity
+                                style={styles.expandedCartItemEdit}
+                                onPress={() => openEditModal(item)}
+                              >
+                                <Ionicons name="create-outline" size={20} color="#007AFF" />
+                              </TouchableOpacity>
+
+                              <TouchableOpacity
+                                style={styles.expandedCartItemRemove}
+                                onPress={() => {
+                                  const updatedCart = cart.filter(cartItem => cartItem.uuid !== item.uuid);
+                                  setCart(updatedCart);
+                                }}
+                              >
+                                <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                              </TouchableOpacity>
+                            </View>
                           </View>
                         </View>
                       </View>
@@ -1627,6 +1827,96 @@ export default function KellnerScreen() {
                     </Text>
                   </TouchableOpacity>
                 </View>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Quantity Split Modal */}
+        <Modal
+          visible={showQuantitySplitModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowQuantitySplitModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.quantitySplitModalContent}>
+              <View style={styles.quantitySplitHeader}>
+                <Text style={styles.quantitySplitTitle}>Menge zum Bearbeiten auswählen</Text>
+                <TouchableOpacity
+                  style={styles.modalCloseButton}
+                  onPress={() => setShowQuantitySplitModal(false)}
+                >
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
+              </View>
+              
+              {editingCartItem && (
+                <View style={styles.quantitySplitContent}>
+                  <Text style={styles.quantitySplitItemTitle}>{editingCartItem.title}</Text>
+                  <Text style={styles.quantitySplitDescription}>
+                    Dieses Item hat Menge {editingCartItem.quantity}. Wie viele sollen bearbeitet werden?
+                  </Text>
+                  
+                  <View style={styles.quantitySplitControls}>
+                    <Text style={styles.quantitySplitLabel}>Menge bearbeiten:</Text>
+                    
+                    <View style={styles.quantitySplitQuantityControls}>
+                      <TouchableOpacity
+                        style={styles.quantityButton}
+                        onPress={() => setSplitQuantity(Math.max(1, splitQuantity - 1))}
+                        disabled={splitQuantity <= 1}
+                      >
+                        <Text style={[
+                          styles.quantityButtonText,
+                          splitQuantity <= 1 && styles.disabledButtonText
+                        ]}>-</Text>
+                      </TouchableOpacity>
+                      
+                      <Text style={styles.quantityDisplay}>{splitQuantity}</Text>
+                      
+                      <TouchableOpacity
+                        style={styles.quantityButton}
+                        onPress={() => setSplitQuantity(Math.min(editingCartItem.quantity, splitQuantity + 1))}
+                        disabled={splitQuantity >= editingCartItem.quantity}
+                      >
+                        <Text style={[
+                          styles.quantityButtonText,
+                          splitQuantity >= editingCartItem.quantity && styles.disabledButtonText
+                        ]}>+</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.quantitySplitInfo}>
+                    <Text style={styles.quantitySplitInfoText}>
+                      • {splitQuantity} {splitQuantity === 1 ? 'Item wird' : 'Items werden'} bearbeitet
+                    </Text>
+                    <Text style={styles.quantitySplitInfoText}>
+                      • {editingCartItem.quantity - splitQuantity} {editingCartItem.quantity - splitQuantity === 1 ? 'Item bleibt' : 'Items bleiben'} unverändert
+                    </Text>
+                  </View>
+                </View>
+              )}
+              
+              <View style={styles.quantitySplitActions}>
+                <TouchableOpacity
+                  style={styles.quantitySplitCancelButton}
+                  onPress={() => setShowQuantitySplitModal(false)}
+                >
+                  <Text style={styles.quantitySplitCancelText}>Abbrechen</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={styles.quantitySplitConfirmButton}
+                  onPress={() => {
+                    if (editingCartItem) {
+                      proceedWithEditModal(editingCartItem, splitQuantity);
+                    }
+                  }}
+                >
+                  <Text style={styles.quantitySplitConfirmText}>Bearbeiten</Text>
+                </TouchableOpacity>
               </View>
             </View>
           </View>
@@ -1896,12 +2186,13 @@ const styles = StyleSheet.create({
   categoryButtonTextActive: {
     color: '#ffffff',
   },
-  itemsContainer: {
-    flex: 0.6,
-    backgroundColor: '#ffffff',
-    paddingHorizontal: 8,
-    paddingTop: 8,
-  },
+ itemsContainer: {
+  flex: 1, // Nimmt jetzt den vollen Platz ein wenn Cart geschlossen
+  backgroundColor: '#ffffff',
+  paddingHorizontal: 8,
+  paddingTop: 8,
+  paddingBottom: 100, // Platz für floating button
+},
   itemRow: {
     backgroundColor: '#ffffff',
     borderRadius: 8, // Reduziert von 12 auf 8
@@ -2112,14 +2403,14 @@ const styles = StyleSheet.create({
   },
 
   // CART STYLES
-  cartSection: {
-    flex: 0.4,
-    backgroundColor: '#f8fafc',
-    borderTopWidth: 2,
-    borderTopColor: '#e2e8f0',
-  },
+cartSection: {
+  flex: 0.4,
+  backgroundColor: '#f1f5f9', // etwas dunkler als weiß (#f9fafb)
+  borderTopWidth: 2,
+  borderTopColor: '#d1d5db', // etwas kräftiger
+},
   cartHeader: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#dbdbdbff',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -2161,11 +2452,11 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
   },
   cartSectionExpanded: {
-    flex: 0.58, // Wenn expanded, nimmt mehr Platz
-    backgroundColor: '#f8fafc',
-    borderTopWidth: 2,
-    borderTopColor: '#e2e8f0',
-  },
+  flex: 0.58,
+  backgroundColor: '#f1f5f9', // gleich wie oben
+  borderTopWidth: 2,
+  borderTopColor: '#d1d5db',
+},
   cartList: {
     flex: 1,
     paddingHorizontal: 8,
@@ -2316,7 +2607,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
-  // NEUE KOMPAKTE CART STYLES
+  // NEUE KOMPAKTE CART STYLES MIT EDIT-BUTTONS
   cartItemCompact: {
     backgroundColor: '#ffffff',
     borderRadius: 8,
@@ -2394,11 +2685,30 @@ const styles = StyleSheet.create({
     minWidth: 20,
     textAlign: 'center',
   },
+  
+  // NEUE EDIT-BUTTON STYLES FÜR COMPACT CART
+  cartItemCompactActions: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    gap: 4,
+  },
+  cartItemCompactEdit: {
+    backgroundColor: '#eff6ff',
+    borderRadius: 12,
+    padding: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#007AFF',
+  },
   cartItemCompactRemove: {
-    padding: 8,
+    padding: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  
   emptyCartCompact: {
     flex: 1,
     alignItems: 'center',
@@ -2503,6 +2813,29 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f3f4f6',
   },
   customerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+  },
+  // Neue Styles für vereinfachte Billing-Darstellung
+  allItemsSection: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    marginVertical: 8,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  allItemsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  allItemsTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#1f2937',
@@ -2668,10 +3001,19 @@ const styles = StyleSheet.create({
   },
   modalHeader: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
+  },
+  modalHeaderLeft: {
+    flex: 1,
+  },
+  modalHeaderTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
   },
   modalCloseButton: {
     padding: 4,
@@ -2697,6 +3039,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6b7280',
     lineHeight: 20,
+  },
+  editModeIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#eff6ff',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginTop: 12,
+    alignSelf: 'flex-start',
+    gap: 6,
+  },
+  editModeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#007AFF',
   },
   modalSection: {
     padding: 20,
@@ -2860,19 +3218,19 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
-  // EXPANDED CART MODAL STYLES
+  // EXPANDED CART MODAL STYLES MIT EDIT-BUTTONS
   expandedCartOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'flex-end',
   },
   expandedCartContent: {
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '85%',
-    flex: 1,
-  },
+  backgroundColor: '#f8fafc', // heller Grauton statt rein weiß
+  borderTopLeftRadius: 20,
+  borderTopRightRadius: 20,
+  maxHeight: '85%',
+  flex: 1,
+},
   expandedCartHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -2993,6 +3351,23 @@ const styles = StyleSheet.create({
     minWidth: 24,
     textAlign: 'center',
   },
+  
+  // NEUE EDIT-BUTTON STYLES FÜR EXPANDED CART
+  expandedCartItemActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  expandedCartItemEdit: {
+    backgroundColor: '#eff6ff',
+    borderRadius: 10,
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#007AFF',
+  },
   expandedCartItemRemove: {
     backgroundColor: '#fee2e2',
     borderRadius: 10,
@@ -3001,6 +3376,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  
   expandedCartEmpty: {
     flex: 1,
     alignItems: 'center',
@@ -3090,4 +3466,150 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
+  
+  // QUANTITY SPLIT MODAL STYLES
+  quantitySplitModalContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    marginHorizontal: 20,
+    marginVertical: 60,
+    maxHeight: '80%',
+  },
+  quantitySplitHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  quantitySplitTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    flex: 1,
+  },
+  quantitySplitContent: {
+    padding: 20,
+  },
+  quantitySplitItemTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 8,
+  },
+  quantitySplitDescription: {
+    fontSize: 16,
+    color: '#6b7280',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  quantitySplitControls: {
+    marginBottom: 24,
+  },
+  quantitySplitLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 12,
+  },
+  quantitySplitQuantityControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f3f4f6',
+    borderRadius: 12,
+    padding: 8,
+  },
+  quantitySplitInfo: {
+    backgroundColor: '#f0f9ff',
+    borderRadius: 8,
+    padding: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: '#007AFF',
+  },
+  quantitySplitInfoText: {
+    fontSize: 14,
+    color: '#374151',
+    marginBottom: 4,
+    lineHeight: 18,
+  },
+  quantitySplitActions: {
+    flexDirection: 'row',
+    padding: 20,
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  quantitySplitCancelButton: {
+    flex: 1,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 8,
+    paddingVertical: 14,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  quantitySplitCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  quantitySplitConfirmButton: {
+    flex: 1,
+    backgroundColor: '#007AFF',
+    borderRadius: 8,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  quantitySplitConfirmText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+
+  // FLOATING CART BUTTON STYLES
+floatingCartButton: {
+  position: 'absolute',
+  bottom: 20,
+  right: 20,
+  backgroundColor: '#007AFF',
+  borderRadius: 25,
+  paddingHorizontal: 16,
+  paddingVertical: 12,
+  shadowColor: '#000000',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.3,
+  shadowRadius: 8,
+  elevation: 8,
+  zIndex: 1000,
+},
+floatingCartContent: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 12,
+},
+floatingCartInfo: {
+  alignItems: 'flex-end',
+},
+floatingCartTotal: {
+  color: '#ffffff',
+  fontSize: 16,
+  fontWeight: 'bold',
+},
+floatingCartCount: {
+  color: '#ffffff',
+  fontSize: 12,
+  opacity: 0.9,
+},
+cartCloseButton: {
+  backgroundColor: '#fee2e2',
+  borderRadius: 18,
+  width: 36,
+  height: 36,
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderWidth: 1,
+  borderColor: '#fecaca',
+},
 });
