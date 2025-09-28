@@ -403,6 +403,33 @@ const BASE_URL = 'https://staging.orderq.de/api'
     }
   };
 
+
+  // ========== ORDER MANAGEMENT METHODEN ==========
+
+// Item Ready Status umschalten
+const toggleItemReady = async (itemId) => {
+  console.log('🔄 Toggling item ready status:', itemId);
+  return apiCall(`/ready-item/${itemId}`);
+};
+
+// Item stornieren
+const cancelOrderItem = async (itemId) => {
+  console.log('❌ Cancelling item:', itemId);
+  return apiCall(`/cancel-item/${itemId}`);
+};
+
+// Bestellung durch Staff abschließen
+const completeOrderByStaff = async (orderId) => {
+  console.log('✅ Completing order by staff:', orderId);
+  return apiCall(`/completeOrderStaff/${orderId}`);
+};
+
+// Alle Bestellungen eines Tisches abschließen
+const completeAllTableOrders = async (tableCode) => {
+  console.log('✅ Completing all orders for table:', tableCode);
+  return apiCall(`/completeAllOrder/${tableCode}`);
+};
+
   const value = {
     // Bestehende Methoden
     login,
@@ -434,6 +461,10 @@ const BASE_URL = 'https://staging.orderq.de/api'
     endSession,
     bulkPayItems,
     moveOrder,
+     toggleItemReady,
+  cancelOrderItem,
+  completeOrderByStaff,
+  completeAllTableOrders,
   };
 
   return (

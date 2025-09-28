@@ -58,7 +58,7 @@ export default function IndexScreen() {
   const [orders, setOrders] = useState<Order[]>([]);
   const previousOrderCount = useRef(0);
 
-  const { getOrders } = useApi();
+  const { getOrders, toggleItemReady, cancelOrderItem, completeOrderByStaff } = useApi();
   const { user, isAuthenticated } = useAuth();
 
   // Auth-Guard
@@ -134,9 +134,9 @@ export default function IndexScreen() {
   };
 
   // Item als fertig markieren
-  const toggleItemReady = async (orderItem: OrderItem) => {
+  const toggleItemReadyStatus = async (orderItem: OrderItem) => {
     try {
-      console.log('🔄 Toggle item ready status:', orderItem.uuid);
+      console.log('🔄 Toggle item ready status:', orderItem.id);
       
       // Optimistisches Update in der UI
       setOrders(prevOrders => 
@@ -150,12 +150,13 @@ export default function IndexScreen() {
         }))
       );
 
-      // Hier würdest du den API-Call machen:
-      // await toggleItemReady(orderItem.uuid);
+      // Echter API-Call
+      await toggleItemReady(orderItem.id);
+      console.log('✅ Item status erfolgreich geändert');
       
     } catch (error) {
       console.error('❌ Fehler beim Umschalten des Item-Status:', error);
-      // Rollback bei Fehler
+      // Rollback bei Fehler - lade Daten neu
       handleLoadOrders();
     }
   };
@@ -172,9 +173,9 @@ export default function IndexScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('❌ Storniere Item:', orderItem.uuid);
+              console.log('❌ Storniere Item:', orderItem.id);
               
-              // Optimistisches Update
+              // Optimistisches Update - entferne Item aus UI
               setOrders(prevOrders => 
                 prevOrders.map(order => ({
                   ...order,
@@ -182,11 +183,13 @@ export default function IndexScreen() {
                 })).filter(order => order.order_items.length > 0)
               );
 
-              // Hier würdest du den API-Call machen:
-              // await cancelItem(orderItem.uuid);
+              // Echter API-Call
+              await cancelOrderItem(orderItem.id);
+              console.log('✅ Item erfolgreich storniert');
               
             } catch (error) {
               console.error('❌ Fehler beim Stornieren:', error);
+              // Rollback bei Fehler
               handleLoadOrders();
             }
           }
@@ -214,16 +217,18 @@ export default function IndexScreen() {
           style: allItemsReady ? 'default' : 'destructive',
           onPress: async () => {
             try {
-              console.log('✅ Schließe Bestellung ab:', order.uuid);
+              console.log('✅ Schließe Bestellung ab:', order.id);
               
-              // Optimistisches Update
+              // Optimistisches Update - entferne Bestellung aus Liste
               setOrders(prevOrders => prevOrders.filter(o => o.id !== order.id));
 
-              // Hier würdest du den API-Call machen:
-              // await completeOrder(order.id);
+              // Echter API-Call
+              await completeOrderByStaff(order.id);
+              console.log('✅ Bestellung erfolgreich abgeschlossen');
               
             } catch (error) {
               console.error('❌ Fehler beim Abschließen:', error);
+              // Rollback bei Fehler
               handleLoadOrders();
             }
           }
@@ -352,7 +357,7 @@ export default function IndexScreen() {
                               styles.actionButton,
                               { backgroundColor: orderItem.is_ready ? '#dc2626' : '#10b981' }
                             ]}
-                            onPress={() => toggleItemReady(orderItem)}
+                            onPress={() => toggleItemReadyStatus(orderItem)}
                           >
                             <Ionicons 
                               name={orderItem.is_ready ? "arrow-undo" : "checkmark"} 
