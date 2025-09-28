@@ -258,6 +258,41 @@ export default function IndexScreen() {
     return order.order_items.length > 0 ? order.order_items[0].table_id : null;
   };
 
+  // Helper: Bestellungen nach Tisch gruppieren
+  const groupOrdersByTable = (orders: Order[]) => {
+    const grouped = orders.reduce((acc, order) => {
+      const tableId = getTableId(order);
+      if (tableId !== null) {
+        if (!acc[tableId]) {
+          acc[tableId] = [];
+        }
+        acc[tableId].push(order);
+      }
+      return acc;
+    }, {} as Record<number, Order[]>);
+
+    // Sortiere Bestellungen innerhalb jeder Tischgruppe nach Erstellungszeit
+    Object.keys(grouped).forEach(tableId => {
+      grouped[parseInt(tableId)].sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      );
+    });
+
+    return grouped;
+  };
+
+  // Helper: Gesamtsumme für Tisch berechnen
+  const getTableTotal = (tableOrders: Order[]): number => {
+    return tableOrders.reduce((sum, order) => sum + parseFloat(order.subtotal), 0);
+  };
+
+  // Helper: Prüfen ob alle Items eines Tisches fertig sind
+  const areAllTableItemsReady = (tableOrders: Order[]): boolean => {
+    return tableOrders.every(order => 
+      order.order_items.every(item => item.is_ready === 1)
+    );
+  };
+
   // Helper: Status-Icon für Items
   const getStatusIcon = (orderItem: OrderItem) => {
     if (orderItem.is_ready === 1) {
@@ -314,6 +349,10 @@ export default function IndexScreen() {
     );
   }
 
+  // Gruppiere Bestellungen nach Tisch
+  const groupedOrders = groupOrdersByTable(orders);
+  const tableIds = Object.keys(groupedOrders).map(Number).sort((a, b) => a - b);
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -321,7 +360,7 @@ export default function IndexScreen() {
         <View>
           <Text style={styles.headerTitle}>Bestellungen</Text>
           <Text style={styles.headerSubtitle}>
-            {orders.length} {orders.length === 1 ? 'neue Bestellung' : 'neue Bestellungen'}
+            {tableIds.length} {tableIds.length === 1 ? 'Tisch' : 'Tische'} • {orders.length} {orders.length === 1 ? 'Bestellung' : 'Bestellungen'}
           </Text>
         </View>
       </View>
@@ -329,135 +368,164 @@ export default function IndexScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {orders.length > 0 ? (
           <View style={styles.ordersContainer}>
-            {orders.map((order) => {
-              const tableId = getTableId(order);
-              const orderTime = formatOrderTime(order.created_at);
-              const allItemsReady = order.order_items.every(item => item.is_ready === 1);
+            {tableIds.map((tableId) => {
+              const tableOrders = groupedOrders[tableId];
+              const tableTotal = getTableTotal(tableOrders);
+              const allTableItemsReady = areAllTableItemsReady(tableOrders);
 
               return (
-                <View key={order.id} style={styles.orderCard}>
-                  {/* Order Header */}
-                  <View style={styles.orderHeader}>
-                    <View style={styles.orderInfo}>
-                      <Text style={styles.orderTitle}>
-                        Bestellung #{order.id}
-                      </Text>
-                      <Text style={styles.orderSubtitle}>
-                        {tableId ? `Tisch ${tableId}` : 'Unbekannter Tisch'} • {orderTime}
+                <View key={tableId} style={styles.tableCard}>
+                  {/* Table Header */}
+                  <View style={styles.tableHeader}>
+                    <View style={styles.tableInfo}>
+                      <Text style={styles.tableTitle}>Tisch {tableId}</Text>
+                      <Text style={styles.tableSubtitle}>
+                        {tableOrders.length} {tableOrders.length === 1 ? 'Bestellung' : 'Bestellungen'}
                       </Text>
                     </View>
-                    <View style={styles.orderStatus}>
-                      <Text style={styles.orderTotal}>€{parseFloat(order.subtotal).toFixed(2)}</Text>
+                    <View style={styles.tableStatus}>
+                      <Text style={styles.tableTotal}>€{tableTotal.toFixed(2)}</Text>
                       <Text style={[
                         styles.statusBadge,
-                        { backgroundColor: allItemsReady ? '#10b981' : '#f59e0b' }
+                        { backgroundColor: allTableItemsReady ? '#10b981' : '#f59e0b' }
                       ]}>
-                        {allItemsReady ? 'Fertig' : 'In Arbeit'}
+                        {allTableItemsReady ? 'Fertig' : 'In Arbeit'}
                       </Text>
                     </View>
                   </View>
 
-                  {/* Order Note */}
-                  {order.note && (
-                    <View style={styles.orderNote}>
-                      <Ionicons name="chatbubble-outline" size={16} color="#6b7280" />
-                      <Text style={styles.orderNoteText}>{order.note}</Text>
-                    </View>
-                  )}
+                  {/* Table Orders */}
+                  <View style={styles.tableOrdersList}>
+                    {tableOrders.map((order, orderIndex) => {
+                      const orderTime = formatOrderTime(order.created_at);
+                      const allItemsReady = order.order_items.every(item => item.is_ready === 1);
 
-                  {/* Order Items */}
-                  <View style={styles.itemsList}>
-                    {order.order_items.map((orderItem) => (
-                      <View key={orderItem.id} style={styles.itemRow}>
-                        <View style={styles.itemInfo}>
-                          <View style={styles.itemHeader}>
-                            <Text style={styles.itemName}>{orderItem.item.title}</Text>
-                            <Text style={styles.itemQuantity}>×{parseFloat(orderItem.quantity)}</Text>
+                      return (
+                        <View key={order.id} style={styles.orderCard}>
+                          {/* Order Header */}
+                          <View style={styles.orderHeader}>
+                            <View style={styles.orderInfo}>
+                              <Text style={styles.orderTitle}>
+                                Teilbestellung #{order.id}
+                              </Text>
+                              <Text style={styles.orderSubtitle}>{orderTime}</Text>
+                            </View>
+                            <View style={styles.orderStatus}>
+                              <Text style={styles.orderTotal}>€{parseFloat(order.subtotal).toFixed(2)}</Text>
+                              <Text style={[
+                                styles.statusBadge,
+                                { backgroundColor: allItemsReady ? '#10b981' : '#f59e0b' }
+                              ]}>
+                                {allItemsReady ? 'Fertig' : 'In Arbeit'}
+                              </Text>
+                            </View>
                           </View>
-                          
-                          {orderItem.item.description && (
-                            <Text style={styles.itemDescription} numberOfLines={1}>
-                              {orderItem.item.description}
-                            </Text>
-                          )}
-                          
-                          {orderItem.note && (
-                            <View style={styles.itemNote}>
-                              <Ionicons name="chatbubble-outline" size={12} color="#6b7280" />
-                              <Text style={styles.itemNoteText}>{orderItem.note}</Text>
+
+                          {/* Order Note */}
+                          {order.note && (
+                            <View style={styles.orderNote}>
+                              <Ionicons name="chatbubble-outline" size={16} color="#6b7280" />
+                              <Text style={styles.orderNoteText}>{order.note}</Text>
                             </View>
                           )}
-                          
-                          {/* Verbesserte Konfigurationsdarstellung */}
-                          {orderItem.configurations && renderItemConfigurations(orderItem.configurations)}
-                          
-                          <Text style={styles.itemPrice}>€{parseFloat(orderItem.subtotal).toFixed(2)}</Text>
-                        </View>
 
-                        <View style={styles.itemActions}>
-                          {/* Status Icon */}
-                          {getStatusIcon(orderItem)}
-                          
-                          {/* Ready Toggle Button mit Pending-Indikator */}
-                          <TouchableOpacity
-                            style={[
-                              styles.actionButton,
-                              { backgroundColor: orderItem.is_ready ? '#dc2626' : '#10b981' },
-                              pendingActions.has(`toggle-${orderItem.uuid}`) && styles.actionButtonPending
-                            ]}
-                            onPress={() => toggleItemReadyStatus(orderItem)}
-                            disabled={pendingActions.has(`toggle-${orderItem.uuid}`)}
-                          >
-                            {pendingActions.has(`toggle-${orderItem.uuid}`) ? (
-                              <View style={styles.pendingSpinner}>
-                                <Text style={styles.pendingDot}>⋯</Text>
+                          {/* Order Items */}
+                          <View style={styles.itemsList}>
+                            {order.order_items.map((orderItem) => (
+                              <View key={orderItem.id} style={styles.itemRow}>
+                                <View style={styles.itemInfo}>
+                                  <View style={styles.itemHeader}>
+                                    <Text style={styles.itemName}>{orderItem.item.title}</Text>
+                                    <Text style={styles.itemQuantity}>×{parseFloat(orderItem.quantity)}</Text>
+                                  </View>
+                                  
+                                  {orderItem.item.description && (
+                                    <Text style={styles.itemDescription} numberOfLines={1}>
+                                      {orderItem.item.description}
+                                    </Text>
+                                  )}
+                                  
+                                  {orderItem.note && (
+                                    <View style={styles.itemNote}>
+                                      <Ionicons name="chatbubble-outline" size={12} color="#6b7280" />
+                                      <Text style={styles.itemNoteText}>{orderItem.note}</Text>
+                                    </View>
+                                  )}
+                                  
+                                  {/* Verbesserte Konfigurationsdarstellung */}
+                                  {orderItem.configurations && renderItemConfigurations(orderItem.configurations)}
+                                  
+                                  <Text style={styles.itemPrice}>€{parseFloat(orderItem.subtotal).toFixed(2)}</Text>
+                                </View>
+
+                                <View style={styles.itemActions}>
+                                  {/* Status Icon */}
+                                  {getStatusIcon(orderItem)}
+                                  
+                                  {/* Ready Toggle Button mit Pending-Indikator */}
+                                  <TouchableOpacity
+                                    style={[
+                                      styles.actionButton,
+                                      { backgroundColor: orderItem.is_ready ? '#dc2626' : '#10b981' },
+                                      pendingActions.has(`toggle-${orderItem.uuid}`) && styles.actionButtonPending
+                                    ]}
+                                    onPress={() => toggleItemReadyStatus(orderItem)}
+                                    disabled={pendingActions.has(`toggle-${orderItem.uuid}`)}
+                                  >
+                                    {pendingActions.has(`toggle-${orderItem.uuid}`) ? (
+                                      <View style={styles.pendingSpinner}>
+                                        <Text style={styles.pendingDot}>⋯</Text>
+                                      </View>
+                                    ) : (
+                                      <Ionicons 
+                                        name={orderItem.is_ready ? "arrow-undo" : "checkmark"} 
+                                        size={16} 
+                                        color="white" 
+                                      />
+                                    )}
+                                  </TouchableOpacity>
+
+                                  {/* Cancel Button mit Pending-Indikator */}
+                                  <TouchableOpacity
+                                    style={[
+                                      styles.actionButton, 
+                                      { backgroundColor: '#ef4444' },
+                                      pendingActions.has(`cancel-${orderItem.uuid}`) && styles.actionButtonPending
+                                    ]}
+                                    onPress={() => cancelItem(orderItem)}
+                                    disabled={pendingActions.has(`cancel-${orderItem.uuid}`)}
+                                  >
+                                    {pendingActions.has(`cancel-${orderItem.uuid}`) ? (
+                                      <View style={styles.pendingSpinner}>
+                                        <Text style={styles.pendingDot}>⋯</Text>
+                                      </View>
+                                    ) : (
+                                      <Ionicons name="close" size={16} color="white" />
+                                    )}
+                                  </TouchableOpacity>
+                                </View>
                               </View>
-                            ) : (
-                              <Ionicons 
-                                name={orderItem.is_ready ? "arrow-undo" : "checkmark"} 
-                                size={16} 
-                                color="white" 
-                              />
-                            )}
-                          </TouchableOpacity>
+                            ))}
+                          </View>
 
-                          {/* Cancel Button mit Pending-Indikator */}
-                          <TouchableOpacity
-                            style={[
-                              styles.actionButton, 
-                              { backgroundColor: '#ef4444' },
-                              pendingActions.has(`cancel-${orderItem.uuid}`) && styles.actionButtonPending
-                            ]}
-                            onPress={() => cancelItem(orderItem)}
-                            disabled={pendingActions.has(`cancel-${orderItem.uuid}`)}
-                          >
-                            {pendingActions.has(`cancel-${orderItem.uuid}`) ? (
-                              <View style={styles.pendingSpinner}>
-                                <Text style={styles.pendingDot}>⋯</Text>
-                              </View>
-                            ) : (
-                              <Ionicons name="close" size={16} color="white" />
-                            )}
-                          </TouchableOpacity>
+                          {/* Order Actions - Einzelne Bestellung abschließen */}
+                          <View style={styles.orderActions}>
+                            <TouchableOpacity
+                              style={[
+                                styles.completeButton,
+                                { backgroundColor: allItemsReady ? '#10b981' : '#f59e0b' }
+                              ]}
+                              onPress={() => completeOrder(order)}
+                            >
+                              <Ionicons name="checkmark-circle" size={20} color="white" />
+                              <Text style={styles.completeButtonText}>
+                                {allItemsReady ? 'Teilbestellung abschließen' : 'Trotzdem abschließen'}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
                         </View>
-                      </View>
-                    ))}
-                  </View>
-
-                  {/* Order Actions */}
-                  <View style={styles.orderActions}>
-                    <TouchableOpacity
-                      style={[
-                        styles.completeButton,
-                        { backgroundColor: allItemsReady ? '#10b981' : '#f59e0b' }
-                      ]}
-                      onPress={() => completeOrder(order)}
-                    >
-                      <Ionicons name="checkmark-circle" size={20} color="white" />
-                      <Text style={styles.completeButtonText}>
-                        {allItemsReady ? 'Bestellung abschließen' : 'Trotzdem abschließen'}
-                      </Text>
-                    </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 </View>
               );
@@ -520,9 +588,9 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   ordersContainer: {
-    gap: 20,
+    gap: 24,
   },
-  orderCard: {
+  tableCard: {
     backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 20,
@@ -534,30 +602,71 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: '#625bff',
   },
+  tableHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+  tableInfo: {
+    flex: 1,
+  },
+  tableTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 4,
+  },
+  tableSubtitle: {
+    fontSize: 16,
+    color: '#64748b',
+  },
+  tableStatus: {
+    alignItems: 'flex-end',
+  },
+  tableTotal: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#059669',
+    marginBottom: 4,
+  },
+  tableOrdersList: {
+    gap: 16,
+  },
+  orderCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: '#94a3b8',
+  },
   orderHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   orderInfo: {
     flex: 1,
   },
   orderTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '600',
     color: '#1e293b',
     marginBottom: 4,
   },
   orderSubtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#64748b',
   },
   orderStatus: {
     alignItems: 'flex-end',
   },
   orderTotal: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#1e293b',
     marginBottom: 4,
