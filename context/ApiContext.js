@@ -406,22 +406,28 @@ const BASE_URL = 'https://staging.orderq.de/api'
 
   // ========== ORDER MANAGEMENT METHODEN ==========
 
-// Item Ready Status umschalten
-const toggleItemReady = async (itemId) => {
-  console.log('🔄 Toggling item ready status:', itemId);
-  return apiCall(`/ready-item/${itemId}`);
+// Item Ready Status umschalten (verwende UUID statt ID)
+const toggleItemReady = async (itemUuid) => {
+  console.log('🔄 Toggling item ready status:', itemUuid);
+  return apiCall(`/item/${itemUuid}/toggle-ready`, {
+    method: 'POST',
+  });
 };
 
-// Item stornieren
-const cancelOrderItem = async (itemId) => {
-  console.log('❌ Cancelling item:', itemId);
-  return apiCall(`/cancel-item/${itemId}`);
+// Item stornieren (verwende bestehende API-Route)
+const cancelOrderItem = async (itemUuid) => {
+  console.log('❌ Cancelling item:', itemUuid);
+  return apiCall(`/item/${itemUuid}/cancel`, {
+    method: 'POST',
+  });
 };
 
-// Bestellung durch Staff abschließen
+// Bestellung durch Staff abschließen (neue Route erforderlich)
 const completeOrderByStaff = async (orderId) => {
   console.log('✅ Completing order by staff:', orderId);
-  return apiCall(`/completeOrderStaff/${orderId}`);
+  return apiCall(`/order/${orderId}/complete`, {
+    method: 'POST',
+  });
 };
 
 // Alle Bestellungen eines Tisches abschließen
@@ -461,7 +467,7 @@ const completeAllTableOrders = async (tableCode) => {
     endSession,
     bulkPayItems,
     moveOrder,
-     toggleItemReady,
+  toggleItemReady,
   cancelOrderItem,
   completeOrderByStaff,
   completeAllTableOrders,

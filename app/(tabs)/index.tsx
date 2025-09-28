@@ -150,7 +150,7 @@ export default function IndexScreen() {
         }))
       );
 
-      // Echter API-Call
+      // Echter API-Call mit ID
       await toggleItemReady(orderItem.id);
       console.log('✅ Item status erfolgreich geändert');
       
@@ -163,78 +163,45 @@ export default function IndexScreen() {
 
   // Item stornieren
   const cancelItem = async (orderItem: OrderItem) => {
-    Alert.alert(
-      'Item stornieren',
-      `Möchten Sie "${orderItem.item.title}" wirklich stornieren?`,
-      [
-        { text: 'Abbrechen', style: 'cancel' },
-        {
-          text: 'Stornieren',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              console.log('❌ Storniere Item:', orderItem.id);
-              
-              // Optimistisches Update - entferne Item aus UI
-              setOrders(prevOrders => 
-                prevOrders.map(order => ({
-                  ...order,
-                  order_items: order.order_items.filter(item => item.uuid !== orderItem.uuid)
-                })).filter(order => order.order_items.length > 0)
-              );
+    try {
+      console.log('❌ Storniere Item:', orderItem.id);
+      
+      // Optimistisches Update - entferne Item aus UI
+      setOrders(prevOrders => 
+        prevOrders.map(order => ({
+          ...order,
+          order_items: order.order_items.filter(item => item.uuid !== orderItem.uuid)
+        })).filter(order => order.order_items.length > 0)
+      );
 
-              // Echter API-Call
-              await cancelOrderItem(orderItem.id);
-              console.log('✅ Item erfolgreich storniert');
-              
-            } catch (error) {
-              console.error('❌ Fehler beim Stornieren:', error);
-              // Rollback bei Fehler
-              handleLoadOrders();
-            }
-          }
-        }
-      ]
-    );
+      // Echter API-Call mit ID
+      await cancelOrderItem(orderItem.id);
+      console.log('✅ Item erfolgreich storniert');
+      
+    } catch (error) {
+      console.error('❌ Fehler beim Stornieren:', error);
+      // Rollback bei Fehler
+      handleLoadOrders();
+    }
   };
 
   // Bestellung abschließen
   const completeOrder = async (order: Order) => {
-    // Prüfe, ob alle Items fertig sind
-    const allItemsReady = order.order_items.every(item => item.is_ready === 1);
-    
-    const message = allItemsReady 
-      ? `Bestellung #${order.id} abschließen?`
-      : `Nicht alle Items sind fertig! Trotzdem abschließen?`;
+    try {
+      console.log('✅ Schließe Bestellung ab:', order.id);
+      
+      // Optimistisches Update - entferne Bestellung aus Liste
+      setOrders(prevOrders => prevOrders.filter(o => o.id !== order.id));
 
-    Alert.alert(
-      'Bestellung abschließen',
-      message,
-      [
-        { text: 'Abbrechen', style: 'cancel' },
-        {
-          text: 'Abschließen',
-          style: allItemsReady ? 'default' : 'destructive',
-          onPress: async () => {
-            try {
-              console.log('✅ Schließe Bestellung ab:', order.id);
-              
-              // Optimistisches Update - entferne Bestellung aus Liste
-              setOrders(prevOrders => prevOrders.filter(o => o.id !== order.id));
-
-              // Echter API-Call
-              await completeOrderByStaff(order.id);
-              console.log('✅ Bestellung erfolgreich abgeschlossen');
-              
-            } catch (error) {
-              console.error('❌ Fehler beim Abschließen:', error);
-              // Rollback bei Fehler
-              handleLoadOrders();
-            }
-          }
-        }
-      ]
-    );
+      // Echter API-Call
+      await completeOrderByStaff(order.id);
+      console.log('✅ Bestellung erfolgreich abgeschlossen');
+      
+    } catch (error) {
+      console.error('❌ Fehler beim Abschließen:', error);
+      // Rollback bei Fehler
+      handleLoadOrders();
+    }
   };
 
   // Helper: Tisch-ID aus Order Items extrahieren
@@ -257,6 +224,34 @@ export default function IndexScreen() {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  // Helper: Konfigurationen formatieren (wie in kellner.tsx)
+  const renderItemConfigurations = (configurations: any) => {
+    if (!configurations) return null;
+
+    return (
+      <View style={styles.itemConfigurations}>
+        <Ionicons name="settings-outline" size={12} color="#6b7280" />
+        <View style={styles.configurationsContent}>
+          {/* Singles Konfigurationen */}
+          {configurations.singles && Object.entries(configurations.singles).map(([key, config]: [string, any]) => (
+            <Text key={key} style={styles.configurationText}>
+              {key}: {config.value}
+            </Text>
+          ))}
+          
+          {/* Multiples Konfigurationen */}
+          {configurations.multiples && Object.entries(configurations.multiples).map(([key, configs]: [string, any]) => (
+            <View key={key}>
+              <Text style={styles.configurationText}>
+                {key}: {Array.isArray(configs) ? configs.map((c: any) => c.title).join(', ') : configs}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    );
   };
 
   // Render nur wenn eingeloggt
@@ -343,6 +338,9 @@ export default function IndexScreen() {
                               <Text style={styles.itemNoteText}>{orderItem.note}</Text>
                             </View>
                           )}
+                          
+                          {/* Verbesserte Konfigurationsdarstellung */}
+                          {orderItem.configurations && renderItemConfigurations(orderItem.configurations)}
                           
                           <Text style={styles.itemPrice}>€{parseFloat(orderItem.subtotal).toFixed(2)}</Text>
                         </View>
@@ -568,6 +566,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6b7280',
     fontStyle: 'italic',
+  },
+  itemConfigurations: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+    gap: 4,
+  },
+  configurationsContent: {
+    flex: 1,
+  },
+  configurationText: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontStyle: 'italic',
+    lineHeight: 16,
   },
   itemPrice: {
     fontSize: 14,
