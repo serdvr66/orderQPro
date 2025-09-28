@@ -57,21 +57,42 @@ interface Order {
 export default function IndexScreen() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
+  const [tables, setTables] = useState<{[key: number]: string}>({});
   const previousOrderCount = useRef(0);
   // Fix: Use number type for React Native setInterval
   const refreshIntervalRef = useRef<number | null>(null);
 
-  const { getOrders, toggleItemReady, cancelOrderItem, completeOrderByStaff } = useApi();
+  const { getOrders, toggleItemReady, cancelOrderItem, completeOrderByStaff, getAllTables } = useApi();
   const { user, isAuthenticated } = useAuth();
 
-  // Auth-Guard
+  // Auth-Guard & Load Tables
   useEffect(() => {
     if (!isAuthenticated && !user) {
       console.log('❌ Index: Nicht eingeloggt - Umleitung zur Login-Seite');
       router.replace('/login');
       return;
     }
+    
+    // Load tables for name mapping
+    loadTableNames();
   }, [isAuthenticated, user]);
+
+  // Function to load table names
+  const loadTableNames = async () => {
+    try {
+      const response = await getAllTables();
+      if (response && response.success && response.data) {
+        const tableMap: {[key: number]: string} = {};
+        response.data.forEach((table: any) => {
+          tableMap[parseInt(table.id)] = table.name;
+        });
+        setTables(tableMap);
+        console.log('📋 Tischnamen geladen:', tableMap);
+      }
+    } catch (error) {
+      console.error('❌ Fehler beim Laden der Tischnamen:', error);
+    }
+  };
 
   // Funktion für lokale Push-Notification
   const sendNewOrderNotification = async (newOrdersCount: number) => {
@@ -258,6 +279,12 @@ export default function IndexScreen() {
     return order.order_items.length > 0 ? order.order_items[0].table_id : null;
   };
 
+  // Helper: Tischname basierend auf ID abrufen
+  const getTableName = (tableId: number | null): string => {
+    if (!tableId) return 'Unbekannter Tisch';
+    return tables[tableId] || `Tisch ${tableId}`;
+  };
+
   // Helper: Bestellungen nach Tisch gruppieren
   const groupOrdersByTable = (orders: Order[]) => {
     const grouped = orders.reduce((acc, order) => {
@@ -271,7 +298,7 @@ export default function IndexScreen() {
       return acc;
     }, {} as Record<number, Order[]>);
 
-    // Sortiere Bestellungen innerhalb jeder Tischgruppe nach Erstellungszeit
+    // Sortiere Bestellungen innerhalb jeder Tischgruppe nach Erstellungszeit (ÄLTESTE ZUERST)
     Object.keys(grouped).forEach(tableId => {
       grouped[parseInt(tableId)].sort((a, b) => 
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -378,7 +405,7 @@ export default function IndexScreen() {
                   {/* Table Header */}
                   <View style={styles.tableHeader}>
                     <View style={styles.tableInfo}>
-                      <Text style={styles.tableTitle}>Tisch {tableId}</Text>
+                      <Text style={styles.tableTitle}>{getTableName(tableId)}</Text>
                       <Text style={styles.tableSubtitle}>
                         {tableOrders.length} {tableOrders.length === 1 ? 'Bestellung' : 'Bestellungen'}
                       </Text>
