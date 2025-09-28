@@ -1,4 +1,4 @@
-// app/(tabs)/index.tsx - Enhanced Version with Item Details
+// app/(tabs)/index.tsx - Enhanced Version with Improved UX
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
@@ -56,7 +56,10 @@ interface Order {
 
 export default function IndexScreen() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
   const previousOrderCount = useRef(0);
+  // Fix: Use number type for React Native setInterval
+  const refreshIntervalRef = useRef<number | null>(null);
 
   const { getOrders, toggleItemReady, cancelOrderItem, completeOrderByStaff } = useApi();
   const { user, isAuthenticated } = useAuth();
@@ -89,21 +92,33 @@ export default function IndexScreen() {
     }
   };
 
-  // Auto-Refresh für Bestellungen
+  // Auto-Refresh für Bestellungen mit intelligenter Pause
   useEffect(() => {
     if (!isAuthenticated || !user) return;
 
     console.log('🚀 Auto-Refresh gestartet');
-    handleLoadOrders();
-
-    const interval = setInterval(() => {
+    
+    const startRefreshInterval = () => {
       handleLoadOrders();
-    }, 2000);
+      
+      refreshIntervalRef.current = setInterval(() => {
+        // Pause Auto-Refresh wenn Actions pending sind
+        if (pendingActions.size === 0) {
+          handleLoadOrders();
+        } else {
+          console.log('⏸️ Auto-Refresh pausiert - Actions pending:', pendingActions.size);
+        }
+      }, 2000);
+    };
+
+    startRefreshInterval();
 
     return () => {
-      clearInterval(interval);
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
     };
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, pendingActions]);
 
   const handleLoadOrders = async () => {
     try {
@@ -133,10 +148,15 @@ export default function IndexScreen() {
     }
   };
 
-  // Item als fertig markieren
+  // Item als fertig markieren - Verbesserte UX
   const toggleItemReadyStatus = async (orderItem: OrderItem) => {
+    const actionKey = `toggle-${orderItem.uuid}`;
+    
     try {
       console.log('🔄 Toggle item ready status:', orderItem.id);
+      
+      // Action als pending markieren
+      setPendingActions(prev => new Set(prev).add(actionKey));
       
       // Optimistisches Update in der UI
       setOrders(prevOrders => 
@@ -154,17 +174,34 @@ export default function IndexScreen() {
       await toggleItemReady(orderItem.id);
       console.log('✅ Item status erfolgreich geändert');
       
+      // Nach erfolgreichem API-Call nochmal die aktuellen Daten laden
+      setTimeout(() => {
+        handleLoadOrders();
+      }, 500); // Kurze Verzögerung für Server-Sync
+      
     } catch (error) {
       console.error('❌ Fehler beim Umschalten des Item-Status:', error);
       // Rollback bei Fehler - lade Daten neu
       handleLoadOrders();
+    } finally {
+      // Action als abgeschlossen markieren
+      setPendingActions(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(actionKey);
+        return newSet;
+      });
     }
   };
 
-  // Item stornieren
+  // Item stornieren - Verbesserte UX
   const cancelItem = async (orderItem: OrderItem) => {
+    const actionKey = `cancel-${orderItem.uuid}`;
+    
     try {
       console.log('❌ Storniere Item:', orderItem.id);
+      
+      // Action als pending markieren
+      setPendingActions(prev => new Set(prev).add(actionKey));
       
       // Optimistisches Update - entferne Item aus UI
       setOrders(prevOrders => 
@@ -178,10 +215,22 @@ export default function IndexScreen() {
       await cancelOrderItem(orderItem.id);
       console.log('✅ Item erfolgreich storniert');
       
+      // Nach erfolgreichem API-Call aktuelle Daten laden
+      setTimeout(() => {
+        handleLoadOrders();
+      }, 500);
+      
     } catch (error) {
       console.error('❌ Fehler beim Stornieren:', error);
       // Rollback bei Fehler
       handleLoadOrders();
+    } finally {
+      // Action als abgeschlossen markieren
+      setPendingActions(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(actionKey);
+        return newSet;
+      });
     }
   };
 
@@ -349,27 +398,46 @@ export default function IndexScreen() {
                           {/* Status Icon */}
                           {getStatusIcon(orderItem)}
                           
-                          {/* Ready Toggle Button */}
+                          {/* Ready Toggle Button mit Pending-Indikator */}
                           <TouchableOpacity
                             style={[
                               styles.actionButton,
-                              { backgroundColor: orderItem.is_ready ? '#dc2626' : '#10b981' }
+                              { backgroundColor: orderItem.is_ready ? '#dc2626' : '#10b981' },
+                              pendingActions.has(`toggle-${orderItem.uuid}`) && styles.actionButtonPending
                             ]}
                             onPress={() => toggleItemReadyStatus(orderItem)}
+                            disabled={pendingActions.has(`toggle-${orderItem.uuid}`)}
                           >
-                            <Ionicons 
-                              name={orderItem.is_ready ? "arrow-undo" : "checkmark"} 
-                              size={16} 
-                              color="white" 
-                            />
+                            {pendingActions.has(`toggle-${orderItem.uuid}`) ? (
+                              <View style={styles.pendingSpinner}>
+                                <Text style={styles.pendingDot}>⋯</Text>
+                              </View>
+                            ) : (
+                              <Ionicons 
+                                name={orderItem.is_ready ? "arrow-undo" : "checkmark"} 
+                                size={16} 
+                                color="white" 
+                              />
+                            )}
                           </TouchableOpacity>
 
-                          {/* Cancel Button */}
+                          {/* Cancel Button mit Pending-Indikator */}
                           <TouchableOpacity
-                            style={[styles.actionButton, { backgroundColor: '#ef4444' }]}
+                            style={[
+                              styles.actionButton, 
+                              { backgroundColor: '#ef4444' },
+                              pendingActions.has(`cancel-${orderItem.uuid}`) && styles.actionButtonPending
+                            ]}
                             onPress={() => cancelItem(orderItem)}
+                            disabled={pendingActions.has(`cancel-${orderItem.uuid}`)}
                           >
-                            <Ionicons name="close" size={16} color="white" />
+                            {pendingActions.has(`cancel-${orderItem.uuid}`) ? (
+                              <View style={styles.pendingSpinner}>
+                                <Text style={styles.pendingDot}>⋯</Text>
+                              </View>
+                            ) : (
+                              <Ionicons name="close" size={16} color="white" />
+                            )}
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -598,6 +666,18 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  actionButtonPending: {
+    opacity: 0.7,
+  },
+  pendingSpinner: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pendingDot: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   orderActions: {
     marginTop: 16,
