@@ -432,9 +432,7 @@ export default function IndexScreen() {
                           {/* Order Header */}
                           <View style={styles.orderHeader}>
                             <View style={styles.orderInfo}>
-                              <Text style={styles.orderTitle}>
-                                Teilbestellung #{order.id}
-                              </Text>
+                           
                               <Text style={styles.orderSubtitle}>{orderTime}</Text>
                             </View>
                             <View style={styles.orderStatus}>
@@ -463,15 +461,9 @@ export default function IndexScreen() {
                                 <View style={styles.itemInfo}>
                                   <View style={styles.itemHeader}>
                                     <Text style={styles.itemName}>{orderItem.item.title}</Text>
-                                    <Text style={styles.itemQuantity}>×{parseFloat(orderItem.quantity)}</Text>
                                   </View>
                                   
-                                  {orderItem.item.description && (
-                                    <Text style={styles.itemDescription} numberOfLines={1}>
-                                      {orderItem.item.description}
-                                    </Text>
-                                  )}
-                                  
+                                 
                                   {orderItem.note && (
                                     <View style={styles.itemNote}>
                                       <Ionicons name="chatbubble-outline" size={12} color="#6b7280" />
