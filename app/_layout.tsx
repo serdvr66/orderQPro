@@ -2,6 +2,7 @@ import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { Stack } from "expo-router";
 import { useEffect, useRef } from "react";
+import { ActivityIndicator, View, StyleSheet } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ApiProvider, useApi } from "../context/ApiContext";
 import { AuthProvider, useAuth } from "../context/AuthContext";
@@ -9,6 +10,15 @@ import {
   registerForPushNotificationsAsync,
   registerPushTokenWithBackend,
 } from "./utils/notifications";
+
+// Loading Screen Component - NEU
+function LoadingScreen() {
+  return (
+    <View style={styles.loadingContainer}>
+      <ActivityIndicator size="large" color="#625BFF" />
+    </View>
+  );
+}
 
 // Separate Komponente für die Push-Token Integration mit umfassendem Debugging
 function PushTokenManager() {
@@ -269,6 +279,28 @@ function PushTokenManager() {
   return null;
 }
 
+// NEU: Navigation Component mit Loading Check
+function RootNavigator() {
+  const { isLoading, isAuthenticated } = useAuth();
+
+  // Zeige Loading Screen während Auth geladen wird
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      {!isAuthenticated ? (
+        // Nicht eingeloggt → Login Screen
+        <Stack.Screen name="login" options={{ headerShown: false }} />
+      ) : (
+        // Eingeloggt → Tab Navigation
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      )}
+    </Stack>
+  );
+}
+
 export default function RootLayout() {
   useEffect(() => {
     console.log("🚀 RootLayout mounted");
@@ -311,14 +343,20 @@ export default function RootLayout() {
       <AuthProvider>
         <ApiProvider>
           <PushTokenManager />
-
-          <Stack screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="index" options={{ headerShown: false }} />
-            <Stack.Screen name="login" options={{ headerShown: false }} />
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          </Stack>
+          {/* NEU: RootNavigator statt direktem Stack */}
+          <RootNavigator />
         </ApiProvider>
       </AuthProvider>
     </SafeAreaProvider>
   );
 }
+
+// NEU: Styles für Loading Screen
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+  },
+});

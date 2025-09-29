@@ -1,7 +1,14 @@
-// context/AuthContext.js - Mit Push-Token Integration (FIXED)
-import React, { createContext, useContext, useRef, useState } from 'react';
+// context/AuthContext.js - Mit AsyncStorage Persistence
+import React, { createContext, useContext, useRef, useState, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const AuthContext = createContext();
+
+// Storage Keys
+const STORAGE_KEYS = {
+  USER: '@auth_user',
+  TOKEN: '@auth_token',
+};
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -14,62 +21,100 @@ export const useAuth = () => {
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
-  const [isLoading, setIsLoading] = useState(false); // Immer false für jetzt
-  const apiContextRef = useRef(null); // useRef statt useState - verhindert Re-renders
+  const [isLoading, setIsLoading] = useState(true); // TRUE beim Start
+  const apiContextRef = useRef(null);
 
-  // KEINE useEffect! KEINE AsyncStorage-Checks!
-  // Alles manuell für jetzt
+  // Bei App-Start: Gespeicherte Session laden
+  useEffect(() => {
+    loadStoredAuth();
+  }, []);
+
+  const loadStoredAuth = async () => {
+    try {
+      console.log('📱 Loading stored auth...');
+      const [storedToken, storedUser] = await Promise.all([
+        AsyncStorage.getItem(STORAGE_KEYS.TOKEN),
+        AsyncStorage.getItem(STORAGE_KEYS.USER),
+      ]);
+
+      if (storedToken && storedUser) {
+        console.log('✅ Found stored session');
+        setToken(storedToken);
+        setUser(JSON.parse(storedUser));
+      } else {
+        console.log('ℹ️ No stored session found');
+      }
+    } catch (error) {
+      console.error('❌ Error loading stored auth:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const login = async (userData, authToken) => {
-    console.log('Login called:', userData);
-    setToken(authToken);
-    setUser(userData);
-    // AsyncStorage später hinzufügen
+    console.log('🔐 Login called:', userData.email);
+    
+    try {
+      // State setzen
+      setToken(authToken);
+      setUser(userData);
+      
+      // In AsyncStorage speichern
+      await Promise.all([
+        AsyncStorage.setItem(STORAGE_KEYS.TOKEN, authToken),
+        AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(userData)),
+      ]);
+      
+      console.log('✅ Session saved to storage');
+    } catch (error) {
+      console.error('❌ Error saving session:', error);
+    }
   };
 
   const logout = async () => {
-    console.log('Logout called');
+    console.log('🚪 Logout called');
     
-    // Push-Token vom Backend entfernen bei Logout
+    // Push-Token vom Backend entfernen
     if (apiContextRef.current && user?.company_id) {
       try {
         console.log('🔄 Unregistering push token on logout...');
         await apiContextRef.current.unregisterPushToken();
-        console.log('✅ Push token unregistered on logout');
+        console.log('✅ Push token unregistered');
       } catch (error) {
         console.log('⚠️ Failed to unregister push token:', error);
       }
-    } else if (apiContextRef.current && user) {
-      try {
-        console.log('🔄 Attempting to unregister push token (fallback)...');
-        await apiContextRef.current.unregisterPushToken();
-        console.log('✅ Push token unregistered on logout (fallback)');
-      } catch (error) {
-        console.log('⚠️ Failed to unregister push token (fallback):', error);
-      }
     }
     
-    setToken(null);
-    setUser(null);
-    // AsyncStorage später hinzufügen
+    try {
+      // State leeren
+      setToken(null);
+      setUser(null);
+      
+      // AsyncStorage leeren
+      await Promise.all([
+        AsyncStorage.removeItem(STORAGE_KEYS.TOKEN),
+        AsyncStorage.removeItem(STORAGE_KEYS.USER),
+      ]);
+      
+      console.log('✅ Session cleared from storage');
+    } catch (error) {
+      console.error('❌ Error clearing session:', error);
+    }
   };
 
-  // Methode um API Context zu setzen (wird vom PushTokenManager aufgerufen)
   const setApiContextForLogout = (api) => {
-    apiContextRef.current = api; // Direkt in ref setzen - kein Re-render
+    apiContextRef.current = api;
   };
 
   const value = {
     user,
     token,
     isAuthenticated: !!token,
-    isLoading, // Immer false
+    isLoading,
     login,
     logout,
-    setApiContextForLogout, // Neue Methode
+    setApiContextForLogout,
   };
-
-  console.log('Auth state:', { isAuthenticated: !!token, isLoading });
 
   return (
     <AuthContext.Provider value={value}>
