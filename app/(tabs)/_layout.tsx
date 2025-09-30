@@ -1,6 +1,8 @@
 // app/(tabs)/_layout.tsx - Mit neuem Kellner-Tab
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
 
 export default function TabLayout() {
   return (

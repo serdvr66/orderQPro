@@ -6,6 +6,8 @@ import { ActivityIndicator, View, StyleSheet } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ApiProvider, useApi } from "../context/ApiContext";
 import { AuthProvider, useAuth } from "../context/AuthContext";
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
 import {
   registerForPushNotificationsAsync,
   registerPushTokenWithBackend,
@@ -339,15 +341,16 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <ApiProvider>
-          <PushTokenManager />
-          {/* NEU: RootNavigator statt direktem Stack */}
-          <RootNavigator />
-        </ApiProvider>
-      </AuthProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <AuthProvider>
+          <ApiProvider>
+            <PushTokenManager />
+            <RootNavigator />
+          </ApiProvider>
+        </AuthProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

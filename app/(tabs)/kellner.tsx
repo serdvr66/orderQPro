@@ -1,10 +1,17 @@
-// app/(tabs)/kellner.tsx - Mit Tab Navigation für Bestellen und Rechnung + Edit-Buttons
+// app/(tabs)/kellner.tsx - Vollständiger korrigierter Code mit Swipe-to-Back
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { styles } from '../../styles/KellnerStyles';
 import { usePermissions } from '../../hooks/usePermissions';
-
+import { PanGestureHandler } from 'react-native-gesture-handler';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  runOnJS,
+  useAnimatedGestureHandler,
+} from 'react-native-reanimated';
 
 import {
   ActivityIndicator,
@@ -17,10 +24,15 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApi } from '../../context/ApiContext';
 import { useAuth } from '../../context/AuthContext';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const SWIPE_THRESHOLD = 100;
+const EDGE_WIDTH = 50;
 
 // TypeScript Interfaces
 interface Table {
@@ -91,7 +103,6 @@ interface SelectedConfiguration {
   [configTitle: string]: string | string[];
 }
 
-// User Interface erweitern
 interface AuthUser {
   id: number;
   name: string;
@@ -101,7 +112,6 @@ interface AuthUser {
   permissions?: string[];
 }
 
-// Neue Interfaces für Abrechnung
 interface BillingItem {
   uuid: string;
   title: string;
@@ -115,8 +125,6 @@ interface BillingItem {
   configurations?: any;
   created_at: string;
 }
-
-
 
 interface Customer {
   session_id: number;
@@ -149,7 +157,7 @@ export default function KellnerScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMenu, setIsLoadingMenu] = useState(false);
   const [scrollPosition, setScrollPosition] = useState(0);
-const scrollViewRef = useRef<ScrollView>(null);
+  const scrollViewRef = useRef<ScrollView>(null);
   const [isLoadingBilling, setIsLoadingBilling] = useState(false);
   
   // Data States
@@ -166,8 +174,8 @@ const scrollViewRef = useRef<ScrollView>(null);
   
   // UI States
   const [showOrderInterface, setShowOrderInterface] = useState(false);
-  const [isCartExpanded, setIsCartExpanded] = useState(false); // Standardmäßig geschlossen
-  const [activeTab, setActiveTab] = useState<'order' | 'billing'>('order'); // Neue Tab-State
+  const [isCartExpanded, setIsCartExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState<'order' | 'billing'>('order');
   
   // Search States
   const [searchQuery, setSearchQuery] = useState('');
@@ -188,7 +196,11 @@ const scrollViewRef = useRef<ScrollView>(null);
   const [showQuantitySplitModal, setShowQuantitySplitModal] = useState(false);
   const [splitQuantity, setSplitQuantity] = useState(1);
 
-  // API Hooks - Erweitert mit Billing-Funktionen
+  // Swipe Animation States
+  const translateX = useSharedValue(0);
+  const overlayOpacity = useSharedValue(0);
+
+  // API Hooks
   const { 
     getAllTables, 
     getMenuForWaiter, 
@@ -203,6 +215,98 @@ const scrollViewRef = useRef<ScrollView>(null);
   } = useApi();
   const { isAuthenticated, user } = useAuth();
   const { hasPermission } = usePermissions();
+
+  // Fixed handleBackToTables function - useCallback for stability
+const handleBackToTables = useCallback(async () => {
+  try {
+    // SOFORT Animation resetten - nicht warten
+    translateX.value = 0;
+    overlayOpacity.value = 0;
+    
+    // State updates sofort, ohne auf loadTables zu warten
+    setShowOrderInterface(false);
+    setSelectedTable(null);
+    setCart([]);
+    setSelectedCategory(null);
+    setBillingData(null);
+    setSelectedItems([]);
+    setActiveTab('order');
+    setIsCartExpanded(false);
+    
+    // Tische im Hintergrund laden - UI ist schon umgeschaltet
+    loadTables().then(() => {
+      // Scroll position erst nach dem Laden wiederherstellen
+      setTimeout(() => {
+        scrollViewRef.current?.scrollTo({ y: scrollPosition, animated: false });
+      }, 50);
+    });
+    
+  } catch (error) {
+    console.error('Error in handleBackToTables:', error);
+  }
+}, []);
+
+  // 1. Optimierter Gesture Handler - weniger Berechnungen in onActive
+const swipeGestureHandler = useAnimatedGestureHandler({
+  onStart: (event, context) => {
+    context.startX = event.x;
+    context.isValidSwipe = event.x <= EDGE_WIDTH;
+  },
+  onActive: (event, context) => {
+    if (!context.isValidSwipe) {
+      return;
+    }
+    
+    const translationX = Math.max(0, event.translationX);
+    const clampedTranslation = Math.min(translationX, SCREEN_WIDTH * 0.3);
+    
+    translateX.value = clampedTranslation;
+    overlayOpacity.value = (clampedTranslation / SWIPE_THRESHOLD) * 0.3;
+  },
+  onEnd: (event, context) => {
+    if (!context.isValidSwipe) {
+      translateX.value = withSpring(0, { damping: 25, stiffness: 400 });
+      overlayOpacity.value = withSpring(0, { damping: 25, stiffness: 400 });
+      return;
+    }
+    
+    const shouldGoBack = event.translationX > SWIPE_THRESHOLD && event.velocityX > 0;
+    
+    if (shouldGoBack) {
+      // ERST das Overlay ausblenden, DANN zur Seite animieren
+      overlayOpacity.value = withSpring(0, 
+        { damping: 30, stiffness: 500 }, // Sehr schnell ausblenden
+        () => {
+          // Nachdem Overlay weg ist, sofort zurück navigieren
+          runOnJS(handleBackToTables)();
+          
+          // Dann erst die Slide-Animation für visuellen Effekt
+          translateX.value = withSpring(SCREEN_WIDTH * 0.1, { 
+            damping: 20, 
+            stiffness: 300 
+          });
+        }
+      );
+    } else {
+      translateX.value = withSpring(0, { damping: 25, stiffness: 400 });
+      overlayOpacity.value = withSpring(0, { damping: 25, stiffness: 400 });
+    }
+  },
+});
+
+
+  // 2. Optimierte Animated Styles - memoization
+const animatedContainerStyle = useAnimatedStyle(() => {
+  return {
+    transform: [{ translateX: translateX.value }],
+  };
+}, []);
+
+const animatedOverlayStyle = useAnimatedStyle(() => {
+  return {
+    opacity: overlayOpacity.value,
+  };
+}, []);
 
   // Auth Guard
   useEffect(() => {
@@ -249,18 +353,16 @@ const scrollViewRef = useRef<ScrollView>(null);
       if (menuResponse && menuResponse.success && menuResponse.data) {
         const rawCategories = menuResponse.data;
         
-        // Process categories: Flatten subcategories into main level
         const processed = processMenuCategories(rawCategories);
         setProcessedCategories(processed);
         setMenuData(rawCategories);
         
-        // Select first category by default
         if (processed.length > 0) {
           setSelectedCategory(processed[0]);
         }
         
         setShowOrderInterface(true);
-        setActiveTab('order'); // Start auf Bestellen-Tab
+        setActiveTab('order');
       } else {
         throw new Error('Keine Menü-Daten erhalten');
       }
@@ -273,7 +375,6 @@ const scrollViewRef = useRef<ScrollView>(null);
     }
   };
 
-  // Neue Funktion: Billing-Daten laden
   const loadBillingData = async () => {
     if (!selectedTable) return;
     
@@ -293,7 +394,6 @@ const scrollViewRef = useRef<ScrollView>(null);
     }
   };
 
-  // Tab-Wechsel Handler
   const handleTabChange = (tab: 'order' | 'billing') => {
     setActiveTab(tab);
     if (tab === 'billing') {
@@ -301,12 +401,10 @@ const scrollViewRef = useRef<ScrollView>(null);
     }
   };
 
-  // Billing-Funktionen
   const handleToggleItemPaid = async (itemUuid: string) => {
     try {
       const response = await toggleItemPaid(itemUuid);
       if (response && response.success) {
-        // Billing-Daten neu laden
         loadBillingData();
       } else {
         Alert.alert('Fehler', 'Status konnte nicht geändert werden');
@@ -359,10 +457,7 @@ const scrollViewRef = useRef<ScrollView>(null);
               const response = await paySession(selectedTable.code);
               if (response && response.success) {
                 loadBillingData();
-                
-                // Tischliste aktualisieren für korrekte Beträge
                 await loadTables();
-                
                 Alert.alert('Erfolg', 'Session wurde bezahlt');
               } else {
                 Alert.alert('Fehler', 'Session konnte nicht bezahlt werden');
@@ -392,9 +487,7 @@ const scrollViewRef = useRef<ScrollView>(null);
             try {
               const response = await endSession(selectedTable.code);
               if (response && response.success) {
-                // Tischliste neu laden BEVOR wir zurückgehen
                 await loadTables();
-                
                 Alert.alert('Erfolg', 'Session wurde beendet');
                 handleBackToTables();
               } else {
@@ -449,7 +542,6 @@ const scrollViewRef = useRef<ScrollView>(null);
     categories.forEach(category => {
       if (!category.is_enabled) return;
       
-      // Add main category if it has items
       if (category.items && category.items.length > 0) {
         processed.push({
           ...category,
@@ -457,7 +549,6 @@ const scrollViewRef = useRef<ScrollView>(null);
         });
       }
       
-      // Add subcategories as separate categories
       if (category.subcategories && category.subcategories.length > 0) {
         category.subcategories.forEach(subcat => {
           if (subcat.is_enabled && subcat.items && subcat.items.length > 0) {
@@ -470,70 +561,55 @@ const scrollViewRef = useRef<ScrollView>(null);
       }
     });
     
-    // Sort by order
     return processed.sort((a, b) => (a.order || 0) - (b.order || 0));
   };
 
-  // BESTEHENDE ORDER-FUNKTIONEN + NEUE EDIT-FUNKTIONEN
-  
-  // Neue Funktion: Edit-Modal für Cart-Items öffnen
   const openEditModal = (cartItem: CartItem) => {
-  // Schließe den erweiterten Warenkorb wenn Edit-Modal geöffnet wird
-  setIsCartExpanded(false);
+    setIsCartExpanded(false);
+    
+    const originalItemUuid = cartItem.uuid.split('-{')[0];
+    const originalItem = findOriginalItemByUuid(originalItemUuid);
+    
+    if (!originalItem) {
+      Alert.alert('Fehler', 'Original-Item konnte nicht gefunden werden');
+      return;
+    }
+    
+    if (cartItem.quantity > 1) {
+      setEditingCartItem(cartItem);
+      setSplitQuantity(1);
+      setShowQuantitySplitModal(true);
+      return;
+    }
+    
+    proceedWithEditModal(cartItem, cartItem.quantity);
+  };
   
-  // Original MenuItem finden basierend auf der Cart-Item UUID
-  const originalItemUuid = cartItem.uuid.split('-{')[0];
-  const originalItem = findOriginalItemByUuid(originalItemUuid);
-  
-  if (!originalItem) {
-    Alert.alert('Fehler', 'Original-Item konnte nicht gefunden werden');
-    return;
-  }
-  
-  // Check if item has quantity > 1, then show quantity split modal
-  if (cartItem.quantity > 1) {
-    setEditingCartItem(cartItem);
-    setSplitQuantity(1);
-    setShowQuantitySplitModal(true);
-    return;
-  }
-  
-  // For quantity = 1, directly open edit modal
-  proceedWithEditModal(cartItem, cartItem.quantity);
-};
-  
-  // Neue Hilfsfunktion: Modal mit bestimmter Quantity öffnen
   const proceedWithEditModal = (cartItem: CartItem, quantityToEdit: number) => {
     const originalItemUuid = cartItem.uuid.split('-{')[0];
     const originalItem = findOriginalItemByUuid(originalItemUuid);
     
     if (!originalItem) return;
     
-    // Edit-Modus aktivieren
     setIsEditingCartItem(true);
     setEditingCartItem(cartItem);
     
-    // Modal mit bestehenden Werten vorausfüllen, aber mit der zu editierenden Quantity
     setSelectedItem(originalItem);
     setModalQuantity(quantityToEdit);
     setSpecialNote(cartItem.specialNote || '');
     
-    // Bestehende Konfigurationen setzen
     if (cartItem.configurations) {
       setSelectedConfigurations(cartItem.configurations);
     } else {
       setSelectedConfigurations({});
     }
     
-    // Preis berechnen
     calculateModalPrice(originalItem, quantityToEdit, cartItem.configurations || {});
     
-    // Modal öffnen
     setShowItemModal(true);
     setShowQuantitySplitModal(false);
   };
   
-  // Bestehende addItemDirectly Funktion bleibt unverändert
   const addItemDirectly = (item: MenuItem) => {
     const basePrice = Number(item.price) || 0;
     let configPriceChange = 0;
@@ -599,7 +675,6 @@ const scrollViewRef = useRef<ScrollView>(null);
   };
 
   const openItemModal = (item: MenuItem) => {
-    // Reset edit state - wir öffnen für neues Item
     setIsEditingCartItem(false);
     setEditingCartItem(null);
     
@@ -717,12 +792,10 @@ const scrollViewRef = useRef<ScrollView>(null);
 
     const finalPrice = basePrice + configPriceChange;
     
-    // Check if we're editing an existing cart item
     if (isEditingCartItem && editingCartItem) {
       const editQuantity = modalQuantity;
       const remainingQuantity = editingCartItem.quantity - editQuantity;
       
-      // Create new item with edited properties
       const newCartItemId = `${selectedItem.uuid}-${JSON.stringify(selectedConfigurations)}-${specialNote}-${Date.now()}`;
       const newItem: CartItem = {
         uuid: newCartItemId,
@@ -735,11 +808,9 @@ const scrollViewRef = useRef<ScrollView>(null);
         configurationPriceChange: configPriceChange
       };
       
-      // Update cart
       let updatedCart = [...cart];
       
       if (remainingQuantity > 0) {
-        // Update original item with reduced quantity
         updatedCart = updatedCart.map(cartItem => {
           if (cartItem.uuid === editingCartItem.uuid) {
             return {
@@ -751,10 +822,8 @@ const scrollViewRef = useRef<ScrollView>(null);
           return cartItem;
         });
         
-        // Add new item with changes
         updatedCart.push(newItem);
       } else {
-        // Replace original item completely (when all quantity is edited)
         updatedCart = updatedCart.map(cartItem => {
           if (cartItem.uuid === editingCartItem.uuid) {
             return newItem;
@@ -765,11 +834,9 @@ const scrollViewRef = useRef<ScrollView>(null);
       
       setCart(updatedCart);
       
-      // Reset edit state
       setIsEditingCartItem(false);
       setEditingCartItem(null);
     } else {
-      // Add new item to cart (original logic)
       const cartItemId = `${selectedItem.uuid}-${JSON.stringify(selectedConfigurations)}-${specialNote}`;
       
       const existingItemIndex = cart.findIndex(cartItem => 
@@ -825,7 +892,7 @@ const scrollViewRef = useRef<ScrollView>(null);
     return cart.reduce((total, item) => total + item.quantity, 0);
   };
 
-  const submitOrder = async () => {
+ const submitOrder = async () => {
     if (!selectedTable || cart.length === 0) {
       Alert.alert('Fehler', 'Warenkorb ist leer');
       return;
@@ -884,7 +951,7 @@ const scrollViewRef = useRef<ScrollView>(null);
           item_id: originalItemUuid,
           qty: cartItem.quantity,
           price: cartItem.price,
-       comments: cartItem.specialNote ? [cartItem.specialNote] : [],
+          comments: cartItem.specialNote ? [cartItem.specialNote] : [],
           item_configurations: Object.keys(configurations).length > 0 ? configurations : undefined,
           configuration_total: configPriceChange,
           base_price: basePrice
@@ -936,26 +1003,6 @@ const scrollViewRef = useRef<ScrollView>(null);
     return undefined;
   };
 
- const handleBackToTables = async () => {
-  setShowOrderInterface(false);
-  setSelectedTable(null);
-  setCart([]);
-  setSelectedCategory(null);
-  setBillingData(null);
-  setSelectedItems([]);
-  setActiveTab('order');
-  setIsCartExpanded(false);
-  
-  await loadTables();
-  
-  // Warte auf nächsten Render-Zyklus
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      scrollViewRef.current?.scrollTo({ y: scrollPosition, animated: false });
-    });
-  });
-};
-  // Neue Such-Funktionen - Diese NACH handleBackToTables() einfügen:
   const handleSearchChange = (query: string) => {
     setSearchQuery(query);
     
@@ -967,7 +1014,6 @@ const scrollViewRef = useRef<ScrollView>(null);
     
     setIsSearchActive(true);
     
-    // Suche durch alle Items in allen Kategorien
     const allItems: MenuItem[] = [];
     processedCategories.forEach(category => {
       category.items.forEach(item => {
@@ -977,7 +1023,6 @@ const scrollViewRef = useRef<ScrollView>(null);
       });
     });
     
-    // Filtere Items basierend auf Suchbegriff - mit null-check für description
     const filtered = allItems.filter(item => 
       item.title.toLowerCase().includes(query.toLowerCase()) ||
       (item.description && item.description.toLowerCase().includes(query.toLowerCase()))
@@ -992,7 +1037,6 @@ const scrollViewRef = useRef<ScrollView>(null);
     setSearchResults([]);
   };
 
-  // Neue Komponente: Billing Interface - Vereinfacht ohne Kunden-Trennung
   const renderBillingInterface = () => {
     if (isLoadingBilling) {
       return (
@@ -1012,12 +1056,10 @@ const scrollViewRef = useRef<ScrollView>(null);
       );
     }
 
-    // Alle Items aus allen Kunden in eine Liste zusammenfassen
     const allItems = billingData.customers.flatMap(customer => customer.items);
 
     return (
       <View style={styles.billingContainer}>
-        {/* Payment Overview */}
         <View style={styles.paymentOverview}>
           <View style={styles.paymentCard}>
             <View style={styles.paymentCardContent}>
@@ -1040,7 +1082,6 @@ const scrollViewRef = useRef<ScrollView>(null);
           </View>
         </View>
 
-        {/* Simplified Items List - No Customer Separation */}
         <ScrollView style={styles.billingItemsList}>
           <View style={styles.allItemsSection}>
             <View style={styles.allItemsHeader}>
@@ -1092,7 +1133,6 @@ const scrollViewRef = useRef<ScrollView>(null);
                     )}
                   </View>
 
-                  {/* Show configurations if any */}
                   {item.configurations && (
                     <View style={styles.itemConfigurations}>
                       {item.configurations.singles && Object.entries(item.configurations.singles).map(([key, config]: [string, any]) => (
@@ -1118,435 +1158,437 @@ const scrollViewRef = useRef<ScrollView>(null);
                   </Text>
                 </View>
                 
-            <View style={styles.billingItemActions}>
-  {hasPermission('pay_items') && (
-    <TouchableOpacity
-      style={[
-        styles.actionButton,
-        item.is_paid ? styles.unpayButton : styles.payButton
-      ]}
-      onPress={() => handleToggleItemPaid(item.uuid)}
-    >
-      <Ionicons 
-        name={item.is_paid ? "arrow-undo" : "card"} 
-        size={16} 
-        color="#ffffff" 
-      />
-    </TouchableOpacity>
-  )}
-  
-  {hasPermission('cancel_items') && (
-    <TouchableOpacity
-      style={[styles.actionButton, styles.cancelButton]}
-      onPress={() => handleCancelItem(item.uuid)}
-    >
-      <Ionicons name="close" size={16} color="#ffffff" />
-    </TouchableOpacity>
-  )}
-</View>
+                <View style={styles.billingItemActions}>
+                  {hasPermission('pay_items') && (
+                    <TouchableOpacity
+                      style={[
+                        styles.actionButton,
+                        item.is_paid ? styles.unpayButton : styles.payButton
+                      ]}
+                      onPress={() => handleToggleItemPaid(item.uuid)}
+                    >
+                      <Ionicons 
+                        name={item.is_paid ? "arrow-undo" : "card"} 
+                        size={16} 
+                        color="#ffffff" 
+                      />
+                    </TouchableOpacity>
+                  )}
+                  
+                  {hasPermission('cancel_items') && (
+                    <TouchableOpacity
+                      style={[styles.actionButton, styles.cancelButton]}
+                      onPress={() => handleCancelItem(item.uuid)}
+                    >
+                      <Ionicons name="close" size={16} color="#ffffff" />
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
             ))}
           </View>
         </ScrollView>
 
-  {/* Action Buttons */}
-<View style={styles.billingActions}>
-  {hasPermission('pay_items') && (
-    <View style={styles.billingActionsRow}>
-      <TouchableOpacity 
-        style={[styles.billingActionButton, styles.bulkPayButton]}
-        onPress={handleBulkPayItems}
-        disabled={selectedItems.length === 0}
-      >
-        <Ionicons name="card-outline" size={20} color="#ffffff" />
-        <Text style={styles.billingActionText}>
-          Ausgewählte bezahlen ({selectedItems.length})
-        </Text>
-      </TouchableOpacity>
-    </View>
-  )}
-  
-  <View style={styles.billingActionsRow}>
-    {hasPermission('pay_session') && (
-      <TouchableOpacity 
-        style={[styles.billingActionButton, styles.payAllButton]}
-        onPress={handlePaySession}
-      >
-        <Ionicons name="card" size={20} color="#ffffff" />
-        <Text style={styles.billingActionText}>Alle bezahlen</Text>
-      </TouchableOpacity>
-    )}
-    
-    {hasPermission('end_session') && (
-      <TouchableOpacity 
-        style={[styles.billingActionButton, styles.endSessionButton]}
-        onPress={handleEndSession}
-      >
-        <Ionicons name="power" size={20} color="#ffffff" />
-        <Text style={styles.billingActionText}>Session beenden</Text>
-      </TouchableOpacity>
-    )}
-  </View>
-</View>
+        <View style={styles.billingActions}>
+          {hasPermission('pay_items') && (
+            <View style={styles.billingActionsRow}>
+              <TouchableOpacity 
+                style={[styles.billingActionButton, styles.bulkPayButton]}
+                onPress={handleBulkPayItems}
+                disabled={selectedItems.length === 0}
+              >
+                <Ionicons name="card-outline" size={20} color="#ffffff" />
+                <Text style={styles.billingActionText}>
+                  Ausgewählte bezahlen ({selectedItems.length})
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          
+          <View style={styles.billingActionsRow}>
+            {hasPermission('pay_session') && (
+              <TouchableOpacity 
+                style={[styles.billingActionButton, styles.payAllButton]}
+                onPress={handlePaySession}
+              >
+                <Ionicons name="card" size={20} color="#ffffff" />
+                <Text style={styles.billingActionText}>Alle bezahlen</Text>
+              </TouchableOpacity>
+            )}
+            
+            {hasPermission('end_session') && (
+              <TouchableOpacity 
+                style={[styles.billingActionButton, styles.endSessionButton]}
+                onPress={handleEndSession}
+              >
+                <Ionicons name="power" size={20} color="#ffffff" />
+                <Text style={styles.billingActionText}>Session beenden</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
       </View>
     );
   };
 
-  // Order Interface mit Tab-Navigation
+  // Order Interface mit Tab-Navigation und Swipe-Gesture
   if (showOrderInterface && selectedTable) {
     return (
       <SafeAreaView style={styles.container}>
-        {/* Top Bar mit Tab-Navigation */}
-        <View style={styles.topBar}>
-          <TouchableOpacity style={styles.backButton} onPress={handleBackToTables}>
-            <Ionicons name="arrow-back" size={20} color="#fff" />
-          </TouchableOpacity>
-          
-          <View style={styles.tableInfo}>
-            <Text style={styles.tableName}>{selectedTable.name}</Text>
-          </View>
-          
-          <View style={styles.cartSummary}>
-            {activeTab === 'order' ? (
-              <>
-                <Text style={styles.cartTotal}>{getCartTotal().toFixed(2)} €</Text>
-                <Text style={styles.cartItemCount}>({getCartItemCount()} Items)</Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.cartTotal}>
-                  €{billingData?.totals.total_amount.toFixed(2) || '0.00'}
-                </Text>
-                <Text style={styles.cartItemCount}>Gesamt</Text>
-              </>
-            )}
-          </View>
-        </View>
+        <PanGestureHandler onGestureEvent={swipeGestureHandler}>
+          <Animated.View style={[styles.container, animatedContainerStyle]}>
+            {/* Swipe Overlay */}
+            <Animated.View style={[styles.swipeOverlay, animatedOverlayStyle]}>
+              <View style={styles.swipeIndicator}>
+                <Ionicons name="arrow-back" size={24} color="#ffffff" />
+                <Text style={styles.swipeText}>Zurück zu Tischen</Text>
+              </View>
+            </Animated.View>
 
-     {/* Tab Navigation */}
-<View style={styles.tabNavigation}>
-  {hasPermission('show_order') && (
-    <TouchableOpacity
-      style={[
-        styles.tabButton,
-        activeTab === 'order' && styles.tabButtonActive
-      ]}
-      onPress={() => handleTabChange('order')}
-    >
-      <Ionicons 
-        name={activeTab === 'order' ? "restaurant" : "restaurant-outline"} 
-        size={20} 
-        color={activeTab === 'order' ? "#ffffff" : "#6b7280"} 
-      />
-      <Text style={[
-        styles.tabButtonText,
-        activeTab === 'order' && styles.tabButtonTextActive
-      ]}>
-        Bestellen
-      </Text>
-    </TouchableOpacity>
-  )}
-
-  {hasPermission('list_table_management') && (
-    <TouchableOpacity
-      style={[
-        styles.tabButton,
-        activeTab === 'billing' && styles.tabButtonActive
-      ]}
-      onPress={() => handleTabChange('billing')}
-    >
-      <Ionicons 
-        name={activeTab === 'billing' ? "receipt" : "receipt-outline"} 
-        size={20} 
-        color={activeTab === 'billing' ? "#ffffff" : "#6b7280"} 
-      />
-      <Text style={[
-        styles.tabButtonText,
-        activeTab === 'billing' && styles.tabButtonTextActive
-      ]}>
-        Rechnung
-      </Text>
-    </TouchableOpacity>
-  )}
-</View>
-
-        {/* Tab Content */}
-        {activeTab === 'order' ? (
-          // BESTELLEN TAB - Bestehende Order-Logic
-          isLoadingMenu ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#007AFF" />
-              <Text style={styles.loadingText}>Lade Menü...</Text>
+            {/* Top Bar mit Tab-Navigation */}
+            <View style={styles.topBar}>
+              <TouchableOpacity style={styles.backButton} onPress={handleBackToTables}>
+                <Ionicons name="arrow-back" size={20} color="#fff" />
+              </TouchableOpacity>
+              
+              <View style={styles.tableInfo}>
+                <Text style={styles.tableName}>{selectedTable.name}</Text>
+              </View>
+              
+              <View style={styles.cartSummary}>
+                {activeTab === 'order' ? (
+                  <>
+                    <Text style={styles.cartTotal}>{getCartTotal().toFixed(2)} €</Text>
+                    <Text style={styles.cartItemCount}>({getCartItemCount()} Items)</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.cartTotal}>
+                      €{billingData?.totals.total_amount.toFixed(2) || '0.00'}
+                    </Text>
+                    <Text style={styles.cartItemCount}>Gesamt</Text>
+                  </>
+                )}
+              </View>
             </View>
-          ) : (
-            <>
-              {/* Search Section - Zwischen Tabs und Kategorien */}
-              <View style={styles.searchSection}>
-                <View style={styles.searchInputContainer}>
-                  <Ionicons name="search" size={16} color="#6b7280" style={styles.searchIcon} />
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder="Suchen..."
-                    value={searchQuery}
-                    onChangeText={handleSearchChange}
-                    onFocus={() => {
-                      if (searchQuery.length >= 2) {
-                        setIsSearchActive(true);
-                      }
-                    }}
-                  />
-                  {searchQuery.length > 0 && (
-                    <TouchableOpacity
-                      style={styles.searchClearButton}
-                      onPress={clearSearch}
-                    >
-                      <Ionicons name="close" size={16} color="#6b7280" />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
 
-              {/* Category Buttons */}
-              <View style={styles.categoryContainer}>
-                <ScrollView 
-                  horizontal 
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.categoryScrollContent}
+            {/* Tab Navigation */}
+            <View style={styles.tabNavigation}>
+              {hasPermission('show_order') && (
+                <TouchableOpacity
+                  style={[
+                    styles.tabButton,
+                    activeTab === 'order' && styles.tabButtonActive
+                  ]}
+                  onPress={() => handleTabChange('order')}
                 >
-                  {processedCategories.map((category) => (
-                    <TouchableOpacity
-                      key={category.id}
-                      style={[
-                        styles.categoryButton,
-                        selectedCategory?.id === category.id && styles.categoryButtonActive
-                      ]}
-                      onPress={() => setSelectedCategory(category)}
-                    >
-                      <Text style={[
-                        styles.categoryButtonText,
-                        selectedCategory?.id === category.id && styles.categoryButtonTextActive
-                      ]}>
-                        {category.title}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
+                  <Ionicons 
+                    name={activeTab === 'order' ? "restaurant" : "restaurant-outline"} 
+                    size={20} 
+                    color={activeTab === 'order' ? "#ffffff" : "#6b7280"} 
+                  />
+                  <Text style={[
+                    styles.tabButtonText,
+                    activeTab === 'order' && styles.tabButtonTextActive
+                  ]}>
+                    Bestellen
+                  </Text>
+                </TouchableOpacity>
+              )}
 
-              {/* Items List - 100% des verfügbaren Platzes */}
-              <View style={styles.itemsContainer}>
-                {/* Suche-Ergebnisse oder normale Kategorie-Items */}
-                {isSearchActive ? (
-                  // Search Results
-                  <FlatList
-                    data={searchResults}
-                    keyExtractor={(item) => item.uuid}
-                    ListHeaderComponent={() => (
-                      <View style={styles.searchResultsHeader}>
-                        <Text style={styles.searchResultsText}>
-                          {searchResults.length} Ergebnis{searchResults.length !== 1 ? 'se' : ''} für "{searchQuery}"
-                        </Text>
-                      </View>
-                    )}
-                    ListEmptyComponent={() => (
-                      <View style={styles.emptySearchResults}>
-                        <Ionicons name="search-outline" size={48} color="#9ca3af" />
-                        <Text style={styles.emptySearchText}>
-                          Keine Ergebnisse für "{searchQuery}"
-                        </Text>
-                        <Text style={styles.emptySearchSubtext}>
-                          Versuchen Sie andere Suchbegriffe
-                        </Text>
-                      </View>
-                    )}
-                    renderItem={({ item }) => {
-                      const cartQuantity = cart
-                        .filter(cartItem => cartItem.uuid.startsWith(item.uuid))
-                        .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
-                      
-                      return (
-                        <View style={[
-                          styles.itemRow,
-                          cartQuantity > 0 && styles.itemRowSelected
-                        ]}>
-                          <TouchableOpacity
-                            style={styles.itemRowMainArea}
-                            onPress={() => addItemDirectly(item)}
-                          >
-                            <View style={styles.itemRowContent}>
-                              <View style={styles.itemRowInfo}>
-                                <Text style={styles.itemRowTitle} numberOfLines={2}>
-                                  {item.title}
-                                </Text>
-                                
+              {hasPermission('list_table_management') && (
+                <TouchableOpacity
+                  style={[
+                    styles.tabButton,
+                    activeTab === 'billing' && styles.tabButtonActive
+                  ]}
+                  onPress={() => handleTabChange('billing')}
+                >
+                  <Ionicons 
+                    name={activeTab === 'billing' ? "receipt" : "receipt-outline"} 
+                    size={20} 
+                    color={activeTab === 'billing' ? "#ffffff" : "#6b7280"} 
+                  />
+                  <Text style={[
+                    styles.tabButtonText,
+                    activeTab === 'billing' && styles.tabButtonTextActive
+                  ]}>
+                    Rechnung
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Tab Content */}
+            {activeTab === 'order' ? (
+              // BESTELLEN TAB
+              isLoadingMenu ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color="#007AFF" />
+                  <Text style={styles.loadingText}>Lade Menü...</Text>
+                </View>
+              ) : (
+                <>
+                  {/* Search Section */}
+                  <View style={styles.searchSection}>
+                    <View style={styles.searchInputContainer}>
+                      <Ionicons name="search" size={16} color="#6b7280" style={styles.searchIcon} />
+                      <TextInput
+                        style={styles.searchInput}
+                        placeholder="Suchen..."
+                        value={searchQuery}
+                        onChangeText={handleSearchChange}
+                        onFocus={() => {
+                          if (searchQuery.length >= 2) {
+                            setIsSearchActive(true);
+                          }
+                        }}
+                      />
+                      {searchQuery.length > 0 && (
+                        <TouchableOpacity
+                          style={styles.searchClearButton}
+                          onPress={clearSearch}
+                        >
+                          <Ionicons name="close" size={16} color="#6b7280" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* Category Buttons */}
+                  <View style={styles.categoryContainer}>
+                    <ScrollView 
+                      horizontal 
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.categoryScrollContent}
+                    >
+                      {processedCategories.map((category) => (
+                        <TouchableOpacity
+                          key={category.id}
+                          style={[
+                            styles.categoryButton,
+                            selectedCategory?.id === category.id && styles.categoryButtonActive
+                          ]}
+                          onPress={() => setSelectedCategory(category)}
+                        >
+                          <Text style={[
+                            styles.categoryButtonText,
+                            selectedCategory?.id === category.id && styles.categoryButtonTextActive
+                          ]}>
+                            {category.title}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+
+                  {/* Items List */}
+                  <View style={styles.itemsContainer}>
+                    {isSearchActive ? (
+                      // Search Results
+                      <FlatList
+                        data={searchResults}
+                        keyExtractor={(item) => item.uuid}
+                        ListHeaderComponent={() => (
+                          <View style={styles.searchResultsHeader}>
+                            <Text style={styles.searchResultsText}>
+                              {searchResults.length} Ergebnis{searchResults.length !== 1 ? 'se' : ''} für "{searchQuery}"
+                            </Text>
+                          </View>
+                        )}
+                        ListEmptyComponent={() => (
+                          <View style={styles.emptySearchResults}>
+                            <Ionicons name="search-outline" size={48} color="#9ca3af" />
+                            <Text style={styles.emptySearchText}>
+                              Keine Ergebnisse für "{searchQuery}"
+                            </Text>
+                            <Text style={styles.emptySearchSubtext}>
+                              Versuchen Sie andere Suchbegriffe
+                            </Text>
+                          </View>
+                        )}
+                        renderItem={({ item }) => {
+                          const cartQuantity = cart
+                            .filter(cartItem => cartItem.uuid.startsWith(item.uuid))
+                            .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
+                          
+                          return (
+                            <View style={[
+                              styles.itemRow,
+                              cartQuantity > 0 && styles.itemRowSelected
+                            ]}>
+                              <TouchableOpacity
+                                style={styles.itemRowMainArea}
+                                onPress={() => addItemDirectly(item)}
+                              >
+                                <View style={styles.itemRowContent}>
+                                  <View style={styles.itemRowInfo}>
+                                    <Text style={styles.itemRowTitle} numberOfLines={2}>
+                                      {item.title}
+                                    </Text>
+                                  </View>
+                                  
+                                  <View style={styles.itemRowPrice}>
+                                    <Text style={styles.itemRowPriceText}>
+                                      {Number(item.price || 0).toFixed(2)} €
+                                    </Text>
+                                    
+                                    {cartQuantity > 0 && (
+                                      <View style={styles.itemRowQuantityBadge}>
+                                        <Text style={styles.itemRowQuantityText}>{cartQuantity}</Text>
+                                      </View>
+                                    )}
+                                  </View>
+                                </View>
+                              </TouchableOpacity>
+
+                              <TouchableOpacity
+                                style={styles.itemRowConfigButton}
+                                onPress={() => openItemModal(item)}
+                              >
+                                <Ionicons name="create-outline" size={20} color="#ffffff" />
+                              </TouchableOpacity>
+                            </View>
+                          );
+                        }}
+                      />
+                    ) : (
+                      // Normal Category Items
+                      selectedCategory && (
+                        <FlatList
+                          data={selectedCategory.items}
+                          keyExtractor={(item) => item.uuid}
+                          renderItem={({ item }) => {
+                            const cartQuantity = cart
+                              .filter(cartItem => cartItem.uuid.startsWith(item.uuid))
+                              .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
+                            const isUnavailable = item.sold_out || item.is_disabled;
                             
-                              </View>
-                              
-                              <View style={styles.itemRowPrice}>
-                                <Text style={styles.itemRowPriceText}>
-                                  {Number(item.price || 0).toFixed(2)} €
-                                </Text>
+                            return (
+                              <View style={[
+                                styles.itemRow,
+                                isUnavailable && styles.itemRowDisabled,
+                                cartQuantity > 0 && styles.itemRowSelected
+                              ]}>
+                                <TouchableOpacity
+                                  style={styles.itemRowMainArea}
+                                  onPress={() => !isUnavailable && addItemDirectly(item)}
+                                  disabled={isUnavailable}
+                                >
+                                  <View style={styles.itemRowContent}>
+                                    <View style={styles.itemRowInfo}>
+                                      <Text style={[
+                                        styles.itemRowTitle,
+                                        isUnavailable && styles.itemRowTitleDisabled
+                                      ]} numberOfLines={2}>
+                                        {item.title}
+                                      </Text>
+                                    </View>
+                                    
+                                    <View style={styles.itemRowPrice}>
+                                      <Text style={[
+                                        styles.itemRowPriceText,
+                                        isUnavailable && styles.itemRowPriceDisabled
+                                      ]}>
+                                        {Number(item.price || 0).toFixed(2)} €
+                                      </Text>
+                                      
+                                      {cartQuantity > 0 && (
+                                        <View style={styles.itemRowQuantityBadge}>
+                                          <Text style={styles.itemRowQuantityText}>{cartQuantity}</Text>
+                                        </View>
+                                      )}
+                                    </View>
+                                  </View>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity
+                                  style={[
+                                    styles.itemRowConfigButton,
+                                    isUnavailable && styles.itemRowConfigButtonDisabled
+                                  ]}
+                                  onPress={() => !isUnavailable && openItemModal(item)}
+                                  disabled={isUnavailable}
+                                >
+                                  <Ionicons name="create-outline" size={20} color="#ffffff" />
+                                </TouchableOpacity>
                                 
-                                {cartQuantity > 0 && (
-                                  <View style={styles.itemRowQuantityBadge}>
-                                    <Text style={styles.itemRowQuantityText}>{cartQuantity}</Text>
+                                {isUnavailable && (
+                                  <View style={styles.itemRowUnavailableBadge}>
+                                    <Text style={styles.itemRowUnavailableText}>
+                                      {item.sold_out ? 'Ausverkauft' : 'Nicht verfügbar'}
+                                    </Text>
                                   </View>
                                 )}
                               </View>
-                            </View>
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            style={styles.itemRowConfigButton}
-                            onPress={() => openItemModal(item)}
-                          >
-                            <Ionicons name="create-outline" size={20} color="#ffffff" />
-                          </TouchableOpacity>
-                        </View>
-                      );
-                    }}
-                  />
-                ) : (
-                  // Normal Category Items
-                  selectedCategory && (
-                    <FlatList
-                      data={selectedCategory.items}
-                      keyExtractor={(item) => item.uuid}
-                      renderItem={({ item }) => {
-                        const cartQuantity = cart
-                          .filter(cartItem => cartItem.uuid.startsWith(item.uuid))
-                          .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
-                        const isUnavailable = item.sold_out || item.is_disabled;
-                        
-                        return (
-                          <View style={[
-                            styles.itemRow,
-                            isUnavailable && styles.itemRowDisabled,
-                            cartQuantity > 0 && styles.itemRowSelected
-                          ]}>
-                            <TouchableOpacity
-                              style={styles.itemRowMainArea}
-                              onPress={() => !isUnavailable && addItemDirectly(item)}
-                              disabled={isUnavailable}
-                            >
-                              <View style={styles.itemRowContent}>
-                                <View style={styles.itemRowInfo}>
-                                  <Text style={[
-                                    styles.itemRowTitle,
-                                    isUnavailable && styles.itemRowTitleDisabled
-                                  ]} numberOfLines={2}>
-                                    {item.title}
-                                  </Text>
-                                  
-                             
-                                </View>
-                                
-                                <View style={styles.itemRowPrice}>
-                                  <Text style={[
-                                    styles.itemRowPriceText,
-                                    isUnavailable && styles.itemRowPriceDisabled
-                                  ]}>
-                                    {Number(item.price || 0).toFixed(2)} €
-                                  </Text>
-                                  
-                                  {cartQuantity > 0 && (
-                                    <View style={styles.itemRowQuantityBadge}>
-                                      <Text style={styles.itemRowQuantityText}>{cartQuantity}</Text>
-                                    </View>
-                                  )}
-                                </View>
-                              </View>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                              style={[
-                                styles.itemRowConfigButton,
-                                isUnavailable && styles.itemRowConfigButtonDisabled
-                              ]}
-                              onPress={() => !isUnavailable && openItemModal(item)}
-                              disabled={isUnavailable}
-                            >
-                              <Ionicons name="create-outline" size={20} color="#ffffff" />
-                            </TouchableOpacity>
-                            
-                            {isUnavailable && (
-                              <View style={styles.itemRowUnavailableBadge}>
-                                <Text style={styles.itemRowUnavailableText}>
-                                  {item.sold_out ? 'Ausverkauft' : 'Nicht verfügbar'}
-                                </Text>
-                              </View>
-                            )}
-                          </View>
-                        );
-                      }}
-                    />
-                  )
-                )}
-              </View>
-
-              {/* Warenkorb - Kompakter Header immer sichtbar */}
-              <View style={styles.cartSectionCompact}>
-                <View style={styles.cartHeader}>
-                  <Text style={styles.cartHeaderTitle}>Warenkorb</Text>
-                  <View style={styles.cartHeaderActions}>
-                    <View style={styles.cartHeaderSummary}>
-                      <Text style={styles.cartHeaderTotal}>{getCartTotal().toFixed(2)} €</Text>
-                      <Text style={styles.cartHeaderCount}>({getCartItemCount()} Items)</Text>
-                    </View>
-                    
-                    {/* Bestellen Button - direkt im Header */}
-                    <TouchableOpacity
-                      style={[
-                        styles.cartQuickOrderButton,
-                        cart.length === 0 && styles.disabledButton
-                      ]}
-                      onPress={submitOrder}
-                      disabled={cart.length === 0}
-                    >
-                      <Ionicons name="restaurant" size={16} color={cart.length === 0 ? "#9ca3af" : "#ffffff"} />
-                    </TouchableOpacity>
-                    
-                    {/* Expand Button */}
-                    <TouchableOpacity
-                      style={styles.cartExpandButton}
-                      onPress={() => setIsCartExpanded(true)}
-                    >
-                      <Ionicons name="chevron-up" size={20} color="#007AFF" />
-                    </TouchableOpacity>
-                    
-                    {/* Close Button */}
-                    <TouchableOpacity
-                      style={styles.cartCloseButton}
-                      onPress={() => {
-                        if (cart.length > 0) {
-                          Alert.alert(
-                            'Warenkorb leeren',
-                            'Sind Sie sicher, dass Sie den Warenkorb leeren möchten?',
-                            [
-                              { text: 'Abbrechen', style: 'cancel' },
-                              { 
-                                text: 'Leeren', 
-                                style: 'destructive',
-                                onPress: () => setCart([])
-                              }
-                            ]
-                          );
-                        }
-                      }}
-                    >
-                      <Ionicons name="close" size={20} color="#ef4444" />
-                    </TouchableOpacity>
+                            );
+                          }}
+                        />
+                      )
+                    )}
                   </View>
-                </View>
-              </View>
 
+                  {/* Warenkorb - Kompakter Header */}
+                  <View style={styles.cartSectionCompact}>
+                    <View style={styles.cartHeader}>
+                      <Text style={styles.cartHeaderTitle}>Warenkorb</Text>
+                      <View style={styles.cartHeaderActions}>
+                        <View style={styles.cartHeaderSummary}>
+                          <Text style={styles.cartHeaderTotal}>{getCartTotal().toFixed(2)} €</Text>
+                          <Text style={styles.cartHeaderCount}>({getCartItemCount()} Items)</Text>
+                        </View>
+                        
+                        <TouchableOpacity
+                          style={[
+                            styles.cartQuickOrderButton,
+                            cart.length === 0 && styles.disabledButton
+                          ]}
+                          onPress={submitOrder}
+                          disabled={cart.length === 0}
+                        >
+                          <Ionicons name="restaurant" size={16} color={cart.length === 0 ? "#9ca3af" : "#ffffff"} />
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity
+                          style={styles.cartExpandButton}
+                          onPress={() => setIsCartExpanded(true)}
+                        >
+                          <Ionicons name="chevron-up" size={20} color="#007AFF" />
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity
+                          style={styles.cartCloseButton}
+                          onPress={() => {
+                            if (cart.length > 0) {
+                              Alert.alert(
+                                'Warenkorb leeren',
+                                'Sind Sie sicher, dass Sie den Warenkorb leeren möchten?',
+                                [
+                                  { text: 'Abbrechen', style: 'cancel' },
+                                  { 
+                                    text: 'Leeren', 
+                                    style: 'destructive',
+                                    onPress: () => setCart([])
+                                  }
+                                ]
+                              );
+                            }
+                          }}
+                        >
+                          <Ionicons name="close" size={20} color="#ef4444" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                </>
+              )
+            ) : (
+              // RECHNUNG TAB
+              renderBillingInterface()
+            )}
+          </Animated.View>
+        </PanGestureHandler>
 
-            </>
-          )
-        ) : (
-          // RECHNUNG TAB - Neue Billing-Logic
-          renderBillingInterface()
-        )}
         {/* Cart Modal - Vollständiger Warenkorb Modal */}
         <Modal
           visible={isCartExpanded}
@@ -1630,7 +1672,7 @@ const scrollViewRef = useRef<ScrollView>(null);
                                   if (itemIndex >= 0) {
                                     updatedCart[itemIndex].quantity += 1;
                                     updatedCart[itemIndex].total = updatedCart[itemIndex].quantity * updatedCart[itemIndex].price;
-                                    setCart(updatedCart);
+                                   setCart(updatedCart);
                                   }
                                 }}
                               >
@@ -1723,7 +1765,7 @@ const scrollViewRef = useRef<ScrollView>(null);
           </View>
         </Modal>
 
-        {/* Item Configuration Modal - Unverändert */}
+        {/* Item Configuration Modal */}
         <Modal
           visible={showItemModal}
           transparent={true}
@@ -1745,7 +1787,6 @@ const scrollViewRef = useRef<ScrollView>(null);
                         style={styles.modalCloseButton}
                         onPress={() => {
                           setShowItemModal(false);
-                          // Reset edit state when closing modal
                           if (isEditingCartItem) {
                             setIsEditingCartItem(false);
                             setEditingCartItem(null);
@@ -1993,15 +2034,15 @@ const scrollViewRef = useRef<ScrollView>(null);
           <Text style={styles.loadingText}>Lade Tische...</Text>
         </View>
       ) : (
-       <ScrollView 
-  ref={scrollViewRef}
-  style={styles.content} 
-  showsVerticalScrollIndicator={false}
-  onScroll={(event) => {
-    setScrollPosition(event.nativeEvent.contentOffset.y);
-  }}
-  scrollEventThrottle={16}
->
+        <ScrollView 
+          ref={scrollViewRef}
+          style={styles.content} 
+          showsVerticalScrollIndicator={false}
+          onScroll={(event) => {
+            setScrollPosition(event.nativeEvent.contentOffset.y);
+          }}
+          scrollEventThrottle={16}
+        >
           {tables.length > 0 ? (
             <View style={styles.tablesContainer}>
               <Text style={styles.sectionTitle}>Tische auswählen</Text>
