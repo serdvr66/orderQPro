@@ -542,23 +542,21 @@ export default function IndexScreen() {
                             ))}
                           </View>
 
-                         {/* Order Actions - Einzelne Bestellung abschließen */}
-{hasPermission('complete_order') && (
-  <View style={styles.orderActions}>
-    <TouchableOpacity
-      style={[
-        styles.completeButton,
-        { backgroundColor: allItemsReady ? '#10b981' : '#f59e0b' }
-      ]}
-      onPress={() => completeOrder(order)}
-    >
-      <Ionicons name="checkmark-circle" size={20} color="white" />
-      <Text style={styles.completeButtonText}>
-        {allItemsReady ? 'Teilbestellung abschließen' : 'Trotzdem abschließen'}
-      </Text>
-    </TouchableOpacity>
-  </View>
-)}
+                          {/* Order Actions - Einzelne Bestellung abschließen */}
+                          <View style={styles.orderActions}>
+                            <TouchableOpacity
+                              style={[
+                                styles.completeButton,
+                                { backgroundColor: allItemsReady ? '#10b981' : '#f59e0b' }
+                              ]}
+                              onPress={() => completeOrder(order)}
+                            >
+                              <Ionicons name="checkmark-circle" size={20} color="white" />
+                              <Text style={styles.completeButtonText}>
+                                {allItemsReady ? 'Teilbestellung abschließen' : 'Trotzdem abschließen'}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
                         </View>
                       );
                     })}

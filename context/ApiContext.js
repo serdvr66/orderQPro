@@ -414,10 +414,10 @@ const toggleItemReady = async (itemUuid) => {
   });
 };
 
-// Item stornieren (verwende bestehende API-Route)
-const cancelOrderItem = async (itemUuid) => {
-  console.log('❌ Cancelling item:', itemUuid);
-  return apiCall(`/item/${itemUuid}/cancel`, {
+// Item stornieren für Bestellseite (verwendet ID)
+const cancelOrderItem = async (itemId) => {  // ← Parameter umbenennen für Klarheit
+  console.log('❌ Cancelling order item:', itemId);
+  return apiCall(`/order-item/${itemId}/cancel`, {  // ← Neue Route verwenden!
     method: 'POST',
   });
 };
