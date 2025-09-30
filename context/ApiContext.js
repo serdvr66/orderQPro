@@ -438,17 +438,16 @@ const completeAllTableOrders = async (tableCode) => {
 
 // ========== WAITER CALLS METHODEN ==========
 
-// Alle Waiter Calls abrufen
 const getWaiterCalls = async () => {
   console.log('🔔 Fetching waiter calls...');
-  return apiCall('/waiter-calls');
+  return apiCall('/fetch-waiter-calls'); // ← Geändert von /waiter-calls
 };
 
 // Waiter Call bestätigen
 const confirmWaiterCall = async (callId) => {
   console.log('✅ Confirming waiter call:', callId);
-  return apiCall(`/waiter-call/${callId}/confirm`, {
-    method: 'POST',
+  return apiCall(`/confirm-waiter-call/${callId}`, { // ← Geändert von /waiter-call/
+    method: 'GET', // ← Web-App verwendet GET, nicht POST
   });
 };
   const value = {

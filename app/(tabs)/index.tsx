@@ -1,4 +1,4 @@
-// app/(tabs)/index.tsx - Enhanced Version with Improved UX and Order Source Detection
+// app/(tabs)/index.tsx - Enhanced Version with Waiter Calls Integration
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
@@ -11,6 +11,8 @@ import {
   View,
   TouchableOpacity,
   Alert,
+  Modal,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useApi } from '../../context/ApiContext';
@@ -56,15 +58,39 @@ interface Order {
   order_items: OrderItem[];
 }
 
+interface WaiterCall {
+  id: number;
+  table_id: number;
+  table_name: string;
+  table_code: string;
+  message: string;
+  is_resolved: boolean;
+  created_at: string;
+  time_ago: string;
+}
+
 export default function IndexScreen() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [waiterCalls, setWaiterCalls] = useState<WaiterCall[]>([]);
   const [pendingActions, setPendingActions] = useState<Set<string>>(new Set());
   const [tables, setTables] = useState<{[key: number]: string}>({});
+  const [showWaiterCallsModal, setShowWaiterCallsModal] = useState(false);
   const previousOrderCount = useRef(0);
-  // Fix: Use number type for React Native setInterval
   const refreshIntervalRef = useRef<number | null>(null);
+  const waiterCallsIntervalRef = useRef<number | null>(null);
 
-  const { getOrders, toggleItemReady, cancelOrderItem, completeOrderByStaff, getAllTables } = useApi();
+  // Animation für Badge
+  const badgeScale = useRef(new Animated.Value(1)).current;
+
+  const { 
+    getOrders, 
+    toggleItemReady, 
+    cancelOrderItem, 
+    completeOrderByStaff, 
+    getAllTables,
+    getWaiterCalls,
+    confirmWaiterCall
+  } = useApi();
   const { user, isAuthenticated } = useAuth();
   const { hasPermission } = usePermissions();
 
@@ -76,16 +102,15 @@ export default function IndexScreen() {
       return;
     }
 
-      if (!hasPermission('show_order')) {
-    console.log('❌ Keine Berechtigung für Orders');
-    Alert.alert(
-      'Keine Berechtigung',
-      'Sie haben keine Berechtigung, Bestellungen anzuzeigen.',
-      [{ text: 'OK', onPress: () => router.replace('/(tabs)/kellner') }]
-    );
-    return;
-  }
-  
+    if (!hasPermission('show_order')) {
+      console.log('❌ Keine Berechtigung für Orders');
+      Alert.alert(
+        'Keine Berechtigung',
+        'Sie haben keine Berechtigung, Bestellungen anzuzeigen.',
+        [{ text: 'OK', onPress: () => router.replace('/(tabs)/kellner') }]
+      );
+      return;
+    }
     
     // Load tables for name mapping
     loadTableNames();
@@ -126,6 +151,121 @@ export default function IndexScreen() {
       console.error('❌ Fehler beim Senden der Notification:', error);
     }
   };
+
+  // Test-Funktion für Waiter Calls (temporär für Debugging)
+  const testWaiterCallsAPI = async () => {
+    try {
+      console.log('🧪 === MANUAL WAITER CALLS TEST ===');
+      console.log('🧪 Triggering manual test...');
+      await handleLoadWaiterCalls();
+    } catch (error) {
+      console.error('🧪 Manual test failed:', error);
+    }
+  };
+
+  // Füge einen Debug-Button temporär hinzu (später entfernen)
+  const showDebugButton = __DEV__; // Nur in Development
+  const animateBadge = () => {
+    Animated.sequence([
+      Animated.timing(badgeScale, {
+        toValue: 1.3,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(badgeScale, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  // Waiter Calls laden - MIT DEBUGGING
+  const handleLoadWaiterCalls = async () => {
+    try {
+      console.log('🔔 === WAITER CALLS DEBUG START ===');
+      console.log('🔔 User authenticated:', isAuthenticated);
+      console.log('🔔 User data:', user);
+      console.log('🔔 About to test simple route first...');
+      
+      // Test 1: Einfache Test-Route
+      try {
+        const testResponse = await fetch('https://staging.orderq.de/api/test-waiter-calls', {
+          headers: {
+            'Authorization': `Bearer ${user?.token || 'missing'}`,
+            'Accept': 'application/json',
+          }
+        });
+        console.log('🔔 Test route status:', testResponse.status);
+        if (testResponse.ok) {
+          const testData = await testResponse.json();
+          console.log('🔔 Test route success:', testData);
+        } else {
+          console.log('🔔 Test route failed');
+        }
+      } catch (testError) {
+        console.log('🔔 Test route error:', testError);
+      }
+      
+      console.log('🔔 Now trying actual waiter calls...');
+      const response = await getWaiterCalls();
+      
+      console.log('🔔 Raw API Response:', response);
+      console.log('🔔 Response success:', response?.success);
+      console.log('🔔 Response data:', response?.data);
+      console.log('🔔 Data is array:', Array.isArray(response?.data));
+
+      if (response && response.success) {
+        const newCalls = Array.isArray(response.data) ? response.data : [];
+        const previousCallCount = waiterCalls.length;
+        
+        console.log('🔔 Previous call count:', previousCallCount);
+        console.log('🔔 New calls count:', newCalls.length);
+        console.log('🔔 New calls data:', newCalls);
+        
+        // Animiere Badge wenn neue Calls da sind
+        if (newCalls.length > previousCallCount && previousCallCount > 0) {
+          console.log('🔔 Animating badge - new calls detected!');
+          animateBadge();
+        }
+        
+        setWaiterCalls(newCalls);
+        console.log(`🔔 ✅ ${newCalls.length} Waiter Calls erfolgreich geladen`);
+      } else {
+        console.log('🔔 ❌ Response not successful or no response');
+        console.log('🔔 Full response object:', JSON.stringify(response, null, 2));
+      }
+      
+      console.log('🔔 === WAITER CALLS DEBUG END ===');
+    } catch (error: any) {
+      console.error('🔔 ❌ ERROR loading waiter calls:', error);
+      console.error('🔔 Error message:', error.message);
+      console.error('🔔 Error stack:', error.stack);
+    }
+  };
+
+  // Auto-Refresh für Waiter Calls
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+
+    console.log('🔔 Auto-Refresh für Waiter Calls gestartet');
+    
+    const startWaiterCallsInterval = () => {
+      handleLoadWaiterCalls();
+      
+      waiterCallsIntervalRef.current = setInterval(() => {
+        handleLoadWaiterCalls();
+      }, 3000); // Alle 3 Sekunden
+    };
+
+    startWaiterCallsInterval();
+
+    return () => {
+      if (waiterCallsIntervalRef.current) {
+        clearInterval(waiterCallsIntervalRef.current);
+      }
+    };
+  }, [isAuthenticated, user]);
 
   // Auto-Refresh für Bestellungen mit intelligenter Pause
   useEffect(() => {
@@ -180,6 +320,25 @@ export default function IndexScreen() {
       }
     } catch (error: any) {
       console.error('Error loading orders:', error);
+    }
+  };
+
+  // Waiter Call bestätigen
+  const handleConfirmWaiterCall = async (callId: number) => {
+    try {
+      console.log('✅ Bestätige Waiter Call:', callId);
+      
+      // Optimistisches Update - entferne Call aus UI
+      setWaiterCalls(prevCalls => prevCalls.filter(call => call.id !== callId));
+      
+      // API Call
+      await confirmWaiterCall(callId);
+      console.log('✅ Waiter Call erfolgreich bestätigt');
+      
+    } catch (error) {
+      console.error('❌ Fehler beim Bestätigen des Waiter Calls:', error);
+      // Reload bei Fehler
+      handleLoadWaiterCalls();
     }
   };
 
@@ -403,7 +562,7 @@ export default function IndexScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
+      {/* Header mit Waiter Calls Badge */}
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Bestellungen</Text>
@@ -411,7 +570,78 @@ export default function IndexScreen() {
             {tableIds.length} {tableIds.length === 1 ? 'Tisch' : 'Tische'} • {orders.length} {orders.length === 1 ? 'Bestellung' : 'Bestellungen'}
           </Text>
         </View>
+        
+        
+     {/* Waiter Calls Badge - immer sichtbar */}
+   <TouchableOpacity 
+     style={styles.waiterCallsBadge}
+     onPress={() => setShowWaiterCallsModal(true)}
+   >
+     <Ionicons name="notifications" size={24} color={waiterCalls.length > 0 ? "#ef4444" : "#94a3b8"} />
+     {waiterCalls.length > 0 && (
+       <Animated.View 
+         style={[
+           styles.badgeCounter,
+           { transform: [{ scale: badgeScale }] }
+         ]}
+       >
+         <Text style={styles.badgeCounterText}>{waiterCalls.length}</Text>
+       </Animated.View>
+     )}
+   </TouchableOpacity>
       </View>
+
+      {/* Waiter Calls Modal */}
+      <Modal
+        visible={showWaiterCallsModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowWaiterCallsModal(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          {/* Modal Header */}
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Kellnerrufe</Text>
+            <TouchableOpacity 
+              onPress={() => setShowWaiterCallsModal(false)}
+              style={styles.closeButton}
+            >
+              <Ionicons name="close" size={24} color="#64748b" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Waiter Calls Liste */}
+          <ScrollView style={styles.modalContent}>
+            {waiterCalls.length > 0 ? (
+              waiterCalls.map((call) => (
+                <View key={call.id} style={styles.waiterCallCard}>
+                  <View style={styles.waiterCallHeader}>
+                    <View style={styles.waiterCallInfo}>
+                      <Text style={styles.waiterCallTable}>{call.table_name}</Text>
+                      <Text style={styles.waiterCallTime}>{call.time_ago}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.confirmCallButton}
+                      onPress={() => handleConfirmWaiterCall(call.id)}
+                    >
+                      <Ionicons name="checkmark" size={20} color="white" />
+                    </TouchableOpacity>
+                  </View>
+                  {call.message && (
+                    <Text style={styles.waiterCallMessage}>{call.message}</Text>
+                  )}
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyCallsContainer}>
+                <Ionicons name="checkmark-circle-outline" size={64} color="#9ca3af" />
+                <Text style={styles.emptyCallsTitle}>Keine Kellnerrufe</Text>
+                <Text style={styles.emptyCallsText}>Alle Rufe wurden bearbeitet</Text>
+              </View>
+            )}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {orders.length > 0 ? (
@@ -528,25 +758,25 @@ export default function IndexScreen() {
                                   </TouchableOpacity>
 
                                  {/* Cancel Button mit Pending-Indikator */}
-{hasPermission('cancel_order_item') && (
-  <TouchableOpacity
-    style={[
-      styles.actionButton, 
-      { backgroundColor: '#ef4444' },
-      pendingActions.has(`cancel-${orderItem.uuid}`) && styles.actionButtonPending
-    ]}
-    onPress={() => cancelItem(orderItem)}
-    disabled={pendingActions.has(`cancel-${orderItem.uuid}`)}
-  >
-    {pendingActions.has(`cancel-${orderItem.uuid}`) ? (
-      <View style={styles.pendingSpinner}>
-        <Text style={styles.pendingDot}>⋯</Text>
-      </View>
-    ) : (
-      <Ionicons name="close" size={16} color="white" />
-    )}
-  </TouchableOpacity>
-)}
+                                  {hasPermission('cancel_order_item') && (
+                                    <TouchableOpacity
+                                      style={[
+                                        styles.actionButton, 
+                                        { backgroundColor: '#ef4444' },
+                                        pendingActions.has(`cancel-${orderItem.uuid}`) && styles.actionButtonPending
+                                      ]}
+                                      onPress={() => cancelItem(orderItem)}
+                                      disabled={pendingActions.has(`cancel-${orderItem.uuid}`)}
+                                    >
+                                      {pendingActions.has(`cancel-${orderItem.uuid}`) ? (
+                                        <View style={styles.pendingSpinner}>
+                                          <Text style={styles.pendingDot}>⋯</Text>
+                                        </View>
+                                      ) : (
+                                        <Ionicons name="close" size={16} color="white" />
+                                      )}
+                                    </TouchableOpacity>
+                                  )}
                                 </View>
                               </View>
                             ))}
@@ -626,6 +856,123 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#64748b',
     marginTop: 4,
+  },
+  // Waiter Calls Badge Styles
+  waiterCallsBadge: {
+    position: 'relative',
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#fee2e2',
+  },
+  badgeCounter: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#ef4444',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#ffffff',
+  },
+  badgeCounterText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  // Modal Styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+  },
+  modalHeader: {
+    backgroundColor: '#ffffff',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1e293b',
+  },
+  closeButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#f1f5f9',
+  },
+  modalContent: {
+    flex: 1,
+    padding: 20,
+  },
+  // Waiter Call Card Styles
+  waiterCallCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#ef4444',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  waiterCallHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  waiterCallInfo: {
+    flex: 1,
+  },
+  waiterCallTable: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 4,
+  },
+  waiterCallTime: {
+    fontSize: 14,
+    color: '#64748b',
+  },
+  waiterCallMessage: {
+    fontSize: 14,
+    color: '#475569',
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  confirmCallButton: {
+    backgroundColor: '#10b981',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Empty States
+  emptyCallsContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 80,
+  },
+  emptyCallsTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#374151',
+    marginTop: 16,
+  },
+  emptyCallsText: {
+    fontSize: 16,
+    color: '#6b7280',
+    marginTop: 8,
+    textAlign: 'center',
   },
   content: {
     flex: 1,
