@@ -1,4 +1,4 @@
-// app/(tabs)/index.tsx - Enhanced Version with Improved UX
+// app/(tabs)/index.tsx - Enhanced Version with Improved UX and Order Source Detection
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
@@ -52,6 +52,7 @@ interface Order {
   total_items: number;
   note?: string;
   created_at: string;
+  order_source: 'guest' | 'staff';
   order_items: OrderItem[];
 }
 
@@ -350,6 +351,13 @@ export default function IndexScreen() {
     });
   };
 
+  // Helper: Order Source Icon
+  const getOrderSourceIcon = (order: Order) => {
+    return order.order_source === 'staff' 
+      ? <Ionicons name="person-outline" size={16} color="#625bff" />
+      : <Ionicons name="people-outline" size={16} color="#10b981" />;
+  };
+
   // Helper: Konfigurationen formatieren (wie in kellner.tsx)
   const renderItemConfigurations = (configurations: any) => {
     if (!configurations) return null;
@@ -445,8 +453,10 @@ export default function IndexScreen() {
                           {/* Order Header */}
                           <View style={styles.orderHeader}>
                             <View style={styles.orderInfo}>
-                           
-                              <Text style={styles.orderSubtitle}>{orderTime}</Text>
+                              <View style={styles.orderSourceContainer}>
+                                {getOrderSourceIcon(order)}
+                                <Text style={styles.orderSubtitle}>{orderTime}</Text>
+                              </View>
                             </View>
                             <View style={styles.orderStatus}>
                               <Text style={styles.orderTotal}>€{parseFloat(order.subtotal).toFixed(2)}</Text>
@@ -685,6 +695,11 @@ const styles = StyleSheet.create({
   },
   orderInfo: {
     flex: 1,
+  },
+  orderSourceContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   orderTitle: {
     fontSize: 16,
