@@ -3,6 +3,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { styles } from '../../styles/KellnerStyles';
+import { usePermissions } from '../../hooks/usePermissions';
+
 
 import {
   ActivityIndicator,
@@ -89,6 +91,16 @@ interface SelectedConfiguration {
   [configTitle: string]: string | string[];
 }
 
+// User Interface erweitern
+interface AuthUser {
+  id: number;
+  name: string;
+  email: string;
+  company_id: number;
+  roles?: string[];
+  permissions?: string[];
+}
+
 // Neue Interfaces für Abrechnung
 interface BillingItem {
   uuid: string;
@@ -103,6 +115,8 @@ interface BillingItem {
   configurations?: any;
   created_at: string;
 }
+
+
 
 interface Customer {
   session_id: number;
@@ -186,6 +200,7 @@ export default function KellnerScreen() {
     moveOrder
   } = useApi();
   const { isAuthenticated, user } = useAuth();
+  const { hasPermission } = usePermissions();
 
   // Auth Guard
   useEffect(() => {
@@ -1096,66 +1111,76 @@ export default function KellnerScreen() {
                   </Text>
                 </View>
                 
-                <View style={styles.billingItemActions}>
-                  <TouchableOpacity
-                    style={[
-                      styles.actionButton,
-                      item.is_paid ? styles.unpayButton : styles.payButton
-                    ]}
-                    onPress={() => handleToggleItemPaid(item.uuid)}
-                  >
-                    <Ionicons 
-                      name={item.is_paid ? "arrow-undo" : "card"} 
-                      size={16} 
-                      color="#ffffff" 
-                    />
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.cancelButton]}
-                    onPress={() => handleCancelItem(item.uuid)}
-                  >
-                    <Ionicons name="close" size={16} color="#ffffff" />
-                  </TouchableOpacity>
-                </View>
+            <View style={styles.billingItemActions}>
+  {hasPermission('pay_items') && (
+    <TouchableOpacity
+      style={[
+        styles.actionButton,
+        item.is_paid ? styles.unpayButton : styles.payButton
+      ]}
+      onPress={() => handleToggleItemPaid(item.uuid)}
+    >
+      <Ionicons 
+        name={item.is_paid ? "arrow-undo" : "card"} 
+        size={16} 
+        color="#ffffff" 
+      />
+    </TouchableOpacity>
+  )}
+  
+  {hasPermission('cancel_items') && (
+    <TouchableOpacity
+      style={[styles.actionButton, styles.cancelButton]}
+      onPress={() => handleCancelItem(item.uuid)}
+    >
+      <Ionicons name="close" size={16} color="#ffffff" />
+    </TouchableOpacity>
+  )}
+</View>
               </View>
             ))}
           </View>
         </ScrollView>
 
-        {/* Action Buttons */}
-        <View style={styles.billingActions}>
-          <View style={styles.billingActionsRow}>
-            <TouchableOpacity 
-              style={[styles.billingActionButton, styles.bulkPayButton]}
-              onPress={handleBulkPayItems}
-              disabled={selectedItems.length === 0}
-            >
-              <Ionicons name="card-outline" size={20} color="#ffffff" />
-              <Text style={styles.billingActionText}>
-                Ausgewählte bezahlen ({selectedItems.length})
-              </Text>
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.billingActionsRow}>
-            <TouchableOpacity 
-              style={[styles.billingActionButton, styles.payAllButton]}
-              onPress={handlePaySession}
-            >
-              <Ionicons name="card" size={20} color="#ffffff" />
-              <Text style={styles.billingActionText}>Alle bezahlen</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[styles.billingActionButton, styles.endSessionButton]}
-              onPress={handleEndSession}
-            >
-              <Ionicons name="power" size={20} color="#ffffff" />
-              <Text style={styles.billingActionText}>Session beenden</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+  {/* Action Buttons */}
+<View style={styles.billingActions}>
+  {hasPermission('pay_items') && (
+    <View style={styles.billingActionsRow}>
+      <TouchableOpacity 
+        style={[styles.billingActionButton, styles.bulkPayButton]}
+        onPress={handleBulkPayItems}
+        disabled={selectedItems.length === 0}
+      >
+        <Ionicons name="card-outline" size={20} color="#ffffff" />
+        <Text style={styles.billingActionText}>
+          Ausgewählte bezahlen ({selectedItems.length})
+        </Text>
+      </TouchableOpacity>
+    </View>
+  )}
+  
+  <View style={styles.billingActionsRow}>
+    {hasPermission('pay_session') && (
+      <TouchableOpacity 
+        style={[styles.billingActionButton, styles.payAllButton]}
+        onPress={handlePaySession}
+      >
+        <Ionicons name="card" size={20} color="#ffffff" />
+        <Text style={styles.billingActionText}>Alle bezahlen</Text>
+      </TouchableOpacity>
+    )}
+    
+    {hasPermission('end_session') && (
+      <TouchableOpacity 
+        style={[styles.billingActionButton, styles.endSessionButton]}
+        onPress={handleEndSession}
+      >
+        <Ionicons name="power" size={20} color="#ffffff" />
+        <Text style={styles.billingActionText}>Session beenden</Text>
+      </TouchableOpacity>
+    )}
+  </View>
+</View>
       </View>
     );
   };
@@ -1191,48 +1216,52 @@ export default function KellnerScreen() {
           </View>
         </View>
 
-        {/* Tab Navigation */}
-        <View style={styles.tabNavigation}>
-          <TouchableOpacity
-            style={[
-              styles.tabButton,
-              activeTab === 'order' && styles.tabButtonActive
-            ]}
-            onPress={() => handleTabChange('order')}
-          >
-            <Ionicons 
-              name={activeTab === 'order' ? "restaurant" : "restaurant-outline"} 
-              size={20} 
-              color={activeTab === 'order' ? "#ffffff" : "#6b7280"} 
-            />
-            <Text style={[
-              styles.tabButtonText,
-              activeTab === 'order' && styles.tabButtonTextActive
-            ]}>
-              Bestellen
-            </Text>
-          </TouchableOpacity>
+     {/* Tab Navigation */}
+<View style={styles.tabNavigation}>
+  {hasPermission('show_order') && (
+    <TouchableOpacity
+      style={[
+        styles.tabButton,
+        activeTab === 'order' && styles.tabButtonActive
+      ]}
+      onPress={() => handleTabChange('order')}
+    >
+      <Ionicons 
+        name={activeTab === 'order' ? "restaurant" : "restaurant-outline"} 
+        size={20} 
+        color={activeTab === 'order' ? "#ffffff" : "#6b7280"} 
+      />
+      <Text style={[
+        styles.tabButtonText,
+        activeTab === 'order' && styles.tabButtonTextActive
+      ]}>
+        Bestellen
+      </Text>
+    </TouchableOpacity>
+  )}
 
-          <TouchableOpacity
-            style={[
-              styles.tabButton,
-              activeTab === 'billing' && styles.tabButtonActive
-            ]}
-            onPress={() => handleTabChange('billing')}
-          >
-            <Ionicons 
-              name={activeTab === 'billing' ? "receipt" : "receipt-outline"} 
-              size={20} 
-              color={activeTab === 'billing' ? "#ffffff" : "#6b7280"} 
-            />
-            <Text style={[
-              styles.tabButtonText,
-              activeTab === 'billing' && styles.tabButtonTextActive
-            ]}>
-              Rechnung
-            </Text>
-          </TouchableOpacity>
-        </View>
+  {hasPermission('list_table_management') && (
+    <TouchableOpacity
+      style={[
+        styles.tabButton,
+        activeTab === 'billing' && styles.tabButtonActive
+      ]}
+      onPress={() => handleTabChange('billing')}
+    >
+      <Ionicons 
+        name={activeTab === 'billing' ? "receipt" : "receipt-outline"} 
+        size={20} 
+        color={activeTab === 'billing' ? "#ffffff" : "#6b7280"} 
+      />
+      <Text style={[
+        styles.tabButtonText,
+        activeTab === 'billing' && styles.tabButtonTextActive
+      ]}>
+        Rechnung
+      </Text>
+    </TouchableOpacity>
+  )}
+</View>
 
         {/* Tab Content */}
         {activeTab === 'order' ? (
@@ -1604,13 +1633,14 @@ export default function KellnerScreen() {
                             
                             {/* Edit und Remove Buttons */}
                             <View style={styles.expandedCartItemActions}>
+                             { /* Edit Button ist hier auskommentiert, da es im Moment bisschen Buggy ist
                               <TouchableOpacity
                                 style={styles.expandedCartItemEdit}
                                 onPress={() => openEditModal(item)}
                               >
                                 <Ionicons name="create-outline" size={20} color="#007AFF" />
                               </TouchableOpacity>
-
+                                */}
                               <TouchableOpacity
                                 style={styles.expandedCartItemRemove}
                                 onPress={() => {

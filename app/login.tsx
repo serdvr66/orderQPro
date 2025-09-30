@@ -1,9 +1,10 @@
-// app/login.tsx - Login Screen mit Logo
+// app/login.tsx - Login Screen mit Subscription Check
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     Image,
     KeyboardAvoidingView,
     Platform,
@@ -28,19 +29,48 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!email || !password) {
-      console.log('Fehler: Bitte geben Sie E-Mail und Passwort ein.');
+      Alert.alert('Fehler', 'Bitte geben Sie E-Mail und Passwort ein.');
       return;
     }
 
     setIsLoading(true);
     try {
       const response = await apiLogin(email, password);
+      
       if (response.success) {
-        await authLogin(response.data.user, response.data.token);
+        const { user, token } = response.data;
+        
+        // DEBUG - kannst später löschen
+        console.log('🔐 Login Response:', {
+          is_subscribed: user.is_subscribed,
+          is_on_trial: user.is_on_trial,
+          plan_type: user.plan_type,
+          permissions: user.permissions,
+          roles: user.roles
+        });
+        
+        // SUBSCRIPTION CHECK
+        if (!user.is_subscribed && !user.is_on_trial) {
+          Alert.alert(
+            'Kein aktives Abonnement',
+            'Sie benötigen ein aktives Abonnement, um die App zu nutzen. Bitte kontaktieren Sie Ihren Administrator.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+        
+        // Login erfolgreich
+        await authLogin(user, token);
         router.replace('/(tabs)/' as any);
+      } else {
+        Alert.alert('Anmeldung fehlgeschlagen', response.message || 'Ungültige Zugangsdaten');
       }
     } catch (error: any) {
-      console.log('Anmeldung fehlgeschlagen:', error?.message || 'Unbekannter Fehler');
+      console.error('Login Error:', error);
+      Alert.alert(
+        'Anmeldung fehlgeschlagen', 
+        error?.message || 'Ein Fehler ist aufgetreten. Bitte versuchen Sie es erneut.'
+      );
     } finally {
       setIsLoading(false);
     }
@@ -53,7 +83,6 @@ export default function LoginScreen() {
         style={styles.keyboardContainer}
       >
         <View style={styles.header}>
-          {/* OrderQ Logo anstatt Text */}
           <Image 
             source={require('../assets/images/OrderQ_logo.png')} 
             style={styles.logo}

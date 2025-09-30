@@ -436,6 +436,21 @@ const completeAllTableOrders = async (tableCode) => {
   return apiCall(`/completeAllOrder/${tableCode}`);
 };
 
+// ========== WAITER CALLS METHODEN ==========
+
+// Alle Waiter Calls abrufen
+const getWaiterCalls = async () => {
+  console.log('🔔 Fetching waiter calls...');
+  return apiCall('/waiter-calls');
+};
+
+// Waiter Call bestätigen
+const confirmWaiterCall = async (callId) => {
+  console.log('✅ Confirming waiter call:', callId);
+  return apiCall(`/waiter-call/${callId}/confirm`, {
+    method: 'POST',
+  });
+};
   const value = {
     // Bestehende Methoden
     login,
@@ -471,6 +486,8 @@ const completeAllTableOrders = async (tableCode) => {
   cancelOrderItem,
   completeOrderByStaff,
   completeAllTableOrders,
+    getWaiterCalls,
+  confirmWaiterCall,
   };
 
   return (

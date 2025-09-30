@@ -3,6 +3,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
+import { usePermissions } from '../../hooks/usePermissions';
 import {
   ScrollView,
   StyleSheet,
@@ -64,6 +65,7 @@ export default function IndexScreen() {
 
   const { getOrders, toggleItemReady, cancelOrderItem, completeOrderByStaff, getAllTables } = useApi();
   const { user, isAuthenticated } = useAuth();
+  const { hasPermission } = usePermissions();
 
   // Auth-Guard & Load Tables
   useEffect(() => {
@@ -72,6 +74,17 @@ export default function IndexScreen() {
       router.replace('/login');
       return;
     }
+
+      if (!hasPermission('show_order')) {
+    console.log('❌ Keine Berechtigung für Orders');
+    Alert.alert(
+      'Keine Berechtigung',
+      'Sie haben keine Berechtigung, Bestellungen anzuzeigen.',
+      [{ text: 'OK', onPress: () => router.replace('/(tabs)/kellner') }]
+    );
+    return;
+  }
+  
     
     // Load tables for name mapping
     loadTableNames();
@@ -504,44 +517,48 @@ export default function IndexScreen() {
                                     )}
                                   </TouchableOpacity>
 
-                                  {/* Cancel Button mit Pending-Indikator */}
-                                  <TouchableOpacity
-                                    style={[
-                                      styles.actionButton, 
-                                      { backgroundColor: '#ef4444' },
-                                      pendingActions.has(`cancel-${orderItem.uuid}`) && styles.actionButtonPending
-                                    ]}
-                                    onPress={() => cancelItem(orderItem)}
-                                    disabled={pendingActions.has(`cancel-${orderItem.uuid}`)}
-                                  >
-                                    {pendingActions.has(`cancel-${orderItem.uuid}`) ? (
-                                      <View style={styles.pendingSpinner}>
-                                        <Text style={styles.pendingDot}>⋯</Text>
-                                      </View>
-                                    ) : (
-                                      <Ionicons name="close" size={16} color="white" />
-                                    )}
-                                  </TouchableOpacity>
+                                 {/* Cancel Button mit Pending-Indikator */}
+{hasPermission('cancel_order_item') && (
+  <TouchableOpacity
+    style={[
+      styles.actionButton, 
+      { backgroundColor: '#ef4444' },
+      pendingActions.has(`cancel-${orderItem.uuid}`) && styles.actionButtonPending
+    ]}
+    onPress={() => cancelItem(orderItem)}
+    disabled={pendingActions.has(`cancel-${orderItem.uuid}`)}
+  >
+    {pendingActions.has(`cancel-${orderItem.uuid}`) ? (
+      <View style={styles.pendingSpinner}>
+        <Text style={styles.pendingDot}>⋯</Text>
+      </View>
+    ) : (
+      <Ionicons name="close" size={16} color="white" />
+    )}
+  </TouchableOpacity>
+)}
                                 </View>
                               </View>
                             ))}
                           </View>
 
-                          {/* Order Actions - Einzelne Bestellung abschließen */}
-                          <View style={styles.orderActions}>
-                            <TouchableOpacity
-                              style={[
-                                styles.completeButton,
-                                { backgroundColor: allItemsReady ? '#10b981' : '#f59e0b' }
-                              ]}
-                              onPress={() => completeOrder(order)}
-                            >
-                              <Ionicons name="checkmark-circle" size={20} color="white" />
-                              <Text style={styles.completeButtonText}>
-                                {allItemsReady ? 'Teilbestellung abschließen' : 'Trotzdem abschließen'}
-                              </Text>
-                            </TouchableOpacity>
-                          </View>
+                         {/* Order Actions - Einzelne Bestellung abschließen */}
+{hasPermission('complete_order') && (
+  <View style={styles.orderActions}>
+    <TouchableOpacity
+      style={[
+        styles.completeButton,
+        { backgroundColor: allItemsReady ? '#10b981' : '#f59e0b' }
+      ]}
+      onPress={() => completeOrder(order)}
+    >
+      <Ionicons name="checkmark-circle" size={20} color="white" />
+      <Text style={styles.completeButtonText}>
+        {allItemsReady ? 'Teilbestellung abschließen' : 'Trotzdem abschließen'}
+      </Text>
+    </TouchableOpacity>
+  </View>
+)}
                         </View>
                       );
                     })}
