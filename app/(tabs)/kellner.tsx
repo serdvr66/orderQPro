@@ -244,7 +244,7 @@ const handleBackToTables = useCallback(async () => {
   } catch (error) {
     console.error('Error in handleBackToTables:', error);
   }
-}, []);
+}, [scrollPosition]);
 
   // 1. Optimierter Gesture Handler - weniger Berechnungen in onActive
 const swipeGestureHandler = useAnimatedGestureHandler({
