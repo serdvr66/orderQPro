@@ -1,7 +1,7 @@
 // app/(tabs)/kellner.tsx - Mit Tab Navigation für Bestellen und Rechnung + Edit-Buttons
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { styles } from '../../styles/KellnerStyles';
 import { usePermissions } from '../../hooks/usePermissions';
 
@@ -148,6 +148,8 @@ export default function KellnerScreen() {
   // Loading States
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMenu, setIsLoadingMenu] = useState(false);
+  const [scrollPosition, setScrollPosition] = useState(0);
+const scrollViewRef = useRef<ScrollView>(null);
   const [isLoadingBilling, setIsLoadingBilling] = useState(false);
   
   // Data States
@@ -934,20 +936,25 @@ export default function KellnerScreen() {
     return undefined;
   };
 
-  const handleBackToTables = () => {
-    setShowOrderInterface(false);
-    setSelectedTable(null);
-    setCart([]);
-    setSelectedCategory(null);
-    setBillingData(null);
-    setSelectedItems([]);
-    setActiveTab('order');
-    setIsCartExpanded(false); // Warenkorb schließen beim Zurückgehen
-    
-    // Tischliste neu laden wenn man zurück zu den Tischen geht
-    loadTables();
-  };
-
+ const handleBackToTables = async () => {
+  setShowOrderInterface(false);
+  setSelectedTable(null);
+  setCart([]);
+  setSelectedCategory(null);
+  setBillingData(null);
+  setSelectedItems([]);
+  setActiveTab('order');
+  setIsCartExpanded(false);
+  
+  await loadTables();
+  
+  // Warte auf nächsten Render-Zyklus
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      scrollViewRef.current?.scrollTo({ y: scrollPosition, animated: false });
+    });
+  });
+};
   // Neue Such-Funktionen - Diese NACH handleBackToTables() einfügen:
   const handleSearchChange = (query: string) => {
     setSearchQuery(query);
@@ -1986,7 +1993,15 @@ export default function KellnerScreen() {
           <Text style={styles.loadingText}>Lade Tische...</Text>
         </View>
       ) : (
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+       <ScrollView 
+  ref={scrollViewRef}
+  style={styles.content} 
+  showsVerticalScrollIndicator={false}
+  onScroll={(event) => {
+    setScrollPosition(event.nativeEvent.contentOffset.y);
+  }}
+  scrollEventThrottle={16}
+>
           {tables.length > 0 ? (
             <View style={styles.tablesContainer}>
               <Text style={styles.sectionTitle}>Tische auswählen</Text>
