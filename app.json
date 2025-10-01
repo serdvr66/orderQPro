@@ -1,33 +1,34 @@
 {
   "expo": {
-    "name": "OrderQ Restaurant App",
-    "slug": "orderq-restaurant-app",
+    "name": "OrderQ Pro",
+    "slug": "orderq-pro",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
+    "scheme": "orderqpro",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.orderq.restaurant",
+      "bundleIdentifier": "com.orderq.pro",
       "entitlements": {
         "aps-environment": "production"
       },
       "infoPlist": {
         "UIBackgroundModes": [
-          "remote-notification",
           "remote-notification"
         ],
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.orderq.restaurant"
+      "package": "com.orderq.restaurantpro",
+      "versionCode": 1
     },
     "web": {
       "bundler": "metro",
