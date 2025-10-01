@@ -2,6 +2,9 @@
   "name": "orderqapp",
   "main": "expo-router/entry",
   "version": "1.0.0",
+  "engines": {
+    "node": ">=20.19.4"
+  },
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
@@ -48,7 +51,7 @@
     "eslint": "^9.25.0",
     "eslint-config-expo": "~9.2.0",
     "typescript": "~5.8.3",
-        "@react-native-community/cli": "latest"
+    "@react-native-community/cli": "latest"
   },
   "private": true
 }
