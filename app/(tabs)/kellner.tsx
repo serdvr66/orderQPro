@@ -1313,7 +1313,7 @@ const animatedOverlayStyle = useAnimatedStyle(() => {
                     styles.tabButtonText,
                     activeTab === 'billing' && styles.tabButtonTextActive
                   ]}>
-                    Rechnung
+                    Bestellübersicht
                   </Text>
                 </TouchableOpacity>
               )}
@@ -1458,6 +1458,8 @@ const animatedOverlayStyle = useAnimatedStyle(() => {
                         <FlatList
                           data={selectedCategory.items}
                           keyExtractor={(item) => item.uuid}
+                            contentContainerStyle={{ paddingBottom: 70 }} // DIESE ZEILE HINZUFÜGEN
+
                           renderItem={({ item }) => {
                             const cartQuantity = cart
                               .filter(cartItem => cartItem.uuid.startsWith(item.uuid))

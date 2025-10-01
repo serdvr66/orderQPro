@@ -334,13 +334,14 @@ export const styles = StyleSheet.create({
 
 cartSectionCompact: {
   position: 'absolute',
-  bottom: 0,
+  bottom: -40,
   left: 0,
   right: 0,
   backgroundColor: '#f1f5f9',
   borderTopWidth: 2,
   borderTopColor: '#d1d5db',
   zIndex: 10,
+   paddingBottom: 5,
 },
 
 cartExpandButton: {

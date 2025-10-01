@@ -14,8 +14,8 @@ export const useApi = () => {
 
 export const ApiProvider = ({ children }) => {
   const { token } = useAuth();
-//  const BASE_URL = 'https://www.orderq.de/api';
-const BASE_URL = 'https://staging.orderq.de/api'
+ const BASE_URL = 'https://www.orderq.de/api';
+//const BASE_URL = 'https://staging.orderq.de/api'
 
   const apiCall = async (endpoint, options = {}) => {
     const url = `${BASE_URL}${endpoint}`;

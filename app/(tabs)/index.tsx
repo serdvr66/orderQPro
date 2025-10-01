@@ -510,12 +510,11 @@ export default function IndexScreen() {
     });
   };
 
-  // Helper: Order Source Icon
-  const getOrderSourceIcon = (order: Order) => {
-    return order.order_source === 'staff' 
-      ? <Ionicons name="person-outline" size={16} color="#625bff" />
-      : <Ionicons name="people-outline" size={16} color="#10b981" />;
-  };
+ const getOrderSourceIcon = (order: Order) => {
+  return order.order_source === 'staff' 
+    ? <Ionicons name="briefcase" size={18} color="#625bff" />
+    : <Ionicons name="people" size={18} color="#10b981" />;
+};
 
   // Helper: Konfigurationen formatieren (wie in kellner.tsx)
   const renderItemConfigurations = (configurations: any) => {
@@ -679,14 +678,25 @@ export default function IndexScreen() {
                       const allItemsReady = order.order_items.every(item => item.is_ready === 1);
 
                       return (
-                        <View key={order.id} style={styles.orderCard}>
+<View key={order.id} style={order.order_source === 'staff' ? styles.orderCardStaff : styles.orderCardGuest}>
                           {/* Order Header */}
                           <View style={styles.orderHeader}>
                             <View style={styles.orderInfo}>
-                              <View style={styles.orderSourceContainer}>
-                                {getOrderSourceIcon(order)}
-                                <Text style={styles.orderSubtitle}>{orderTime}</Text>
-                              </View>
+                             <View style={styles.orderSourceContainer}>
+  {getOrderSourceIcon(order)}
+  <Text style={styles.orderSubtitle}>{orderTime}</Text>
+  <View style={[
+    styles.orderSourceBadge,
+    order.order_source === 'staff' ? styles.orderSourceBadgeStaff : styles.orderSourceBadgeGuest
+  ]}>
+    <Text style={[
+      styles.orderSourceText,
+      order.order_source === 'staff' ? styles.orderSourceTextStaff : styles.orderSourceTextGuest
+    ]}>
+      {order.order_source === 'staff' ? 'Personal' : 'Gast'}
+    </Text>
+  </View>
+</View>
                             </View>
                             <View style={styles.orderStatus}>
                               <Text style={styles.orderTotal}>€{parseFloat(order.subtotal).toFixed(2)}</Text>
@@ -1220,4 +1230,46 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
+
+
+orderCardStaff: {
+  backgroundColor: '#f0f4ff', 
+  borderRadius: 12,
+  padding: 16,
+  borderLeftWidth: 3,
+  borderLeftColor: '#625bff', 
+},
+orderCardGuest: {
+  backgroundColor: '#f0fdf4', 
+  borderRadius: 12,
+  padding: 16,
+  borderLeftWidth: 3,
+  borderLeftColor: '#10b981', 
+},
+orderSourceBadge: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  paddingHorizontal: 8,
+  paddingVertical: 4,
+  borderRadius: 12,
+  gap: 4,
+  marginLeft: 8,
+},
+orderSourceBadgeStaff: {
+  backgroundColor: '#e0e7ff',
+},
+orderSourceBadgeGuest: {
+  backgroundColor: '#dcfce7',
+},
+orderSourceText: {
+  fontSize: 11,
+  fontWeight: '600',
+  textTransform: 'uppercase',
+},
+orderSourceTextStaff: {
+  color: '#625bff',
+},
+orderSourceTextGuest: {
+  color: '#10b981',
+},
 });
