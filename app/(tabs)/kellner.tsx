@@ -1,17 +1,9 @@
-// app/(tabs)/kellner.tsx - Vollständiger korrigierter Code mit Swipe-to-Back
+// app/(tabs)/kellner.tsx - Code ohne Swipe-Funktionalität
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { styles } from '../../styles/KellnerStyles';
 import { usePermissions } from '../../hooks/usePermissions';
-import { PanGestureHandler } from 'react-native-gesture-handler';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  runOnJS,
-  useAnimatedGestureHandler,
-} from 'react-native-reanimated';
 
 import {
   ActivityIndicator,
@@ -31,8 +23,6 @@ import { useApi } from '../../context/ApiContext';
 import { useAuth } from '../../context/AuthContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const SWIPE_THRESHOLD = 100;
-const EDGE_WIDTH = 50;
 
 // TypeScript Interfaces
 interface Table {
@@ -196,10 +186,6 @@ export default function KellnerScreen() {
   const [showQuantitySplitModal, setShowQuantitySplitModal] = useState(false);
   const [splitQuantity, setSplitQuantity] = useState(1);
 
-  // Swipe Animation States
-  const translateX = useSharedValue(0);
-  const overlayOpacity = useSharedValue(0);
-
   // API Hooks
   const { 
     getAllTables, 
@@ -216,97 +202,31 @@ export default function KellnerScreen() {
   const { isAuthenticated, user } = useAuth();
   const { hasPermission } = usePermissions();
 
-  // Fixed handleBackToTables function - useCallback for stability
-const handleBackToTables = useCallback(async () => {
-  try {
-    // SOFORT Animation resetten - nicht warten
-    translateX.value = 0;
-    overlayOpacity.value = 0;
-    
-    // State updates sofort, ohne auf loadTables zu warten
-    setShowOrderInterface(false);
-    setSelectedTable(null);
-    setCart([]);
-    setSelectedCategory(null);
-    setBillingData(null);
-    setSelectedItems([]);
-    setActiveTab('order');
-    setIsCartExpanded(false);
-    
-    // Tische im Hintergrund laden - UI ist schon umgeschaltet
-    loadTables().then(() => {
-      // Scroll position erst nach dem Laden wiederherstellen
-      setTimeout(() => {
-        scrollViewRef.current?.scrollTo({ y: scrollPosition, animated: false });
-      }, 50);
-    });
-    
-  } catch (error) {
-    console.error('Error in handleBackToTables:', error);
-  }
-}, [scrollPosition]);
-
-  // 1. Optimierter Gesture Handler - weniger Berechnungen in onActive
-const swipeGestureHandler = useAnimatedGestureHandler({
-  onStart: (event, context) => {
-    context.startX = event.x;
-    context.isValidSwipe = event.x <= EDGE_WIDTH;
-  },
-  onActive: (event, context) => {
-    if (!context.isValidSwipe) {
-      return;
+  // handleBackToTables function - ohne Swipe-Animation
+  const handleBackToTables = useCallback(async () => {
+    try {
+      // State updates sofort
+      setShowOrderInterface(false);
+      setSelectedTable(null);
+      setCart([]);
+      setSelectedCategory(null);
+      setBillingData(null);
+      setSelectedItems([]);
+      setActiveTab('order');
+      setIsCartExpanded(false);
+      
+      // Tische im Hintergrund laden
+      loadTables().then(() => {
+        // Scroll position wiederherstellen
+        setTimeout(() => {
+          scrollViewRef.current?.scrollTo({ y: scrollPosition, animated: false });
+        }, 50);
+      });
+      
+    } catch (error) {
+      console.error('Error in handleBackToTables:', error);
     }
-    
-    const translationX = Math.max(0, event.translationX);
-    const clampedTranslation = Math.min(translationX, SCREEN_WIDTH * 0.3);
-    
-    translateX.value = clampedTranslation;
-    overlayOpacity.value = (clampedTranslation / SWIPE_THRESHOLD) * 0.3;
-  },
-  onEnd: (event, context) => {
-    if (!context.isValidSwipe) {
-      translateX.value = withSpring(0, { damping: 25, stiffness: 400 });
-      overlayOpacity.value = withSpring(0, { damping: 25, stiffness: 400 });
-      return;
-    }
-    
-    const shouldGoBack = event.translationX > SWIPE_THRESHOLD && event.velocityX > 0;
-    
-    if (shouldGoBack) {
-      // ERST das Overlay ausblenden, DANN zur Seite animieren
-      overlayOpacity.value = withSpring(0, 
-        { damping: 30, stiffness: 500 }, // Sehr schnell ausblenden
-        () => {
-          // Nachdem Overlay weg ist, sofort zurück navigieren
-          runOnJS(handleBackToTables)();
-          
-          // Dann erst die Slide-Animation für visuellen Effekt
-          translateX.value = withSpring(SCREEN_WIDTH * 0.1, { 
-            damping: 20, 
-            stiffness: 300 
-          });
-        }
-      );
-    } else {
-      translateX.value = withSpring(0, { damping: 25, stiffness: 400 });
-      overlayOpacity.value = withSpring(0, { damping: 25, stiffness: 400 });
-    }
-  },
-});
-
-
-  // 2. Optimierte Animated Styles - memoization
-const animatedContainerStyle = useAnimatedStyle(() => {
-  return {
-    transform: [{ translateX: translateX.value }],
-  };
-}, []);
-
-const animatedOverlayStyle = useAnimatedStyle(() => {
-  return {
-    opacity: overlayOpacity.value,
-  };
-}, []);
+  }, [scrollPosition]);
 
   // Auth Guard
   useEffect(() => {
@@ -961,7 +881,7 @@ const animatedOverlayStyle = useAnimatedStyle(() => {
       await placeWaiterOrder(selectedTable.code, orderCart, '');
       
       setCart([]);
-      
+
       Alert.alert(
         'Bestellung erfolgreich',
         `Bestellung für ${selectedTable.name} wurde aufgegeben`,
@@ -1231,205 +1151,257 @@ const animatedOverlayStyle = useAnimatedStyle(() => {
     );
   };
 
-  // Order Interface mit Tab-Navigation und Swipe-Gesture
+  // Order Interface mit Tab-Navigation (ohne Swipe-Gesture)
   if (showOrderInterface && selectedTable) {
     return (
       <SafeAreaView style={styles.container}>
-        <PanGestureHandler onGestureEvent={swipeGestureHandler}>
-          <Animated.View style={[styles.container, animatedContainerStyle]}>
-            {/* Swipe Overlay */}
-            <Animated.View style={[styles.swipeOverlay, animatedOverlayStyle]}>
-              <View style={styles.swipeIndicator}>
-                <Ionicons name="arrow-back" size={24} color="#ffffff" />
-                <Text style={styles.swipeText}>Zurück zu Tischen</Text>
-              </View>
-            </Animated.View>
-
-            {/* Top Bar mit Tab-Navigation */}
-            <View style={styles.topBar}>
-              <TouchableOpacity style={styles.backButton} onPress={handleBackToTables}>
-                <Ionicons name="arrow-back" size={20} color="#fff" />
-              </TouchableOpacity>
-              
-              <View style={styles.tableInfo}>
-                <Text style={styles.tableName}>{selectedTable.name}</Text>
-              </View>
-              
-              <View style={styles.cartSummary}>
-                {activeTab === 'order' ? (
-                  <>
-                    <Text style={styles.cartTotal}>{getCartTotal().toFixed(2)} €</Text>
-                    <Text style={styles.cartItemCount}>({getCartItemCount()} Items)</Text>
-                  </>
-                ) : (
-                  <>
-                    <Text style={styles.cartTotal}>
-                      €{billingData?.totals.total_amount.toFixed(2) || '0.00'}
-                    </Text>
-                    <Text style={styles.cartItemCount}>Gesamt</Text>
-                  </>
-                )}
-              </View>
+        <View style={styles.container}>
+          {/* Top Bar mit Tab-Navigation */}
+          <View style={styles.topBar}>
+            <TouchableOpacity style={styles.backButton} onPress={handleBackToTables}>
+              <Ionicons name="arrow-back" size={20} color="#fff" />
+            </TouchableOpacity>
+            
+            <View style={styles.tableInfo}>
+              <Text style={styles.tableName}>{selectedTable.name}</Text>
             </View>
-
-            {/* Tab Navigation */}
-            <View style={styles.tabNavigation}>
-              {hasPermission('show_order') && (
-                <TouchableOpacity
-                  style={[
-                    styles.tabButton,
-                    activeTab === 'order' && styles.tabButtonActive
-                  ]}
-                  onPress={() => handleTabChange('order')}
-                >
-                  <Ionicons 
-                    name={activeTab === 'order' ? "restaurant" : "restaurant-outline"} 
-                    size={20} 
-                    color={activeTab === 'order' ? "#ffffff" : "#6b7280"} 
-                  />
-                  <Text style={[
-                    styles.tabButtonText,
-                    activeTab === 'order' && styles.tabButtonTextActive
-                  ]}>
-                    Bestellen
-                  </Text>
-                </TouchableOpacity>
-              )}
-
-              {hasPermission('list_table_management') && (
-                <TouchableOpacity
-                  style={[
-                    styles.tabButton,
-                    activeTab === 'billing' && styles.tabButtonActive
-                  ]}
-                  onPress={() => handleTabChange('billing')}
-                >
-                  <Ionicons 
-                    name={activeTab === 'billing' ? "receipt" : "receipt-outline"} 
-                    size={20} 
-                    color={activeTab === 'billing' ? "#ffffff" : "#6b7280"} 
-                  />
-                  <Text style={[
-                    styles.tabButtonText,
-                    activeTab === 'billing' && styles.tabButtonTextActive
-                  ]}>
-                    Bestellübersicht
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Tab Content */}
-            {activeTab === 'order' ? (
-              // BESTELLEN TAB
-              isLoadingMenu ? (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="large" color="#007AFF" />
-                  <Text style={styles.loadingText}>Lade Menü...</Text>
-                </View>
+            
+            <View style={styles.cartSummary}>
+              {activeTab === 'order' ? (
+                <>
+                  <Text style={styles.cartTotal}>{getCartTotal().toFixed(2)} €</Text>
+                  <Text style={styles.cartItemCount}>({getCartItemCount()} Items)</Text>
+                </>
               ) : (
                 <>
-                  {/* Search Section */}
-                  <View style={styles.searchSection}>
-                    <View style={styles.searchInputContainer}>
-                      <Ionicons name="search" size={16} color="#6b7280" style={styles.searchIcon} />
-                      <TextInput
-                        style={styles.searchInput}
-                        placeholder="Suchen..."
-                        value={searchQuery}
-                        onChangeText={handleSearchChange}
-                        onFocus={() => {
-                          if (searchQuery.length >= 2) {
-                            setIsSearchActive(true);
-                          }
-                        }}
-                      />
-                      {searchQuery.length > 0 && (
-                        <TouchableOpacity
-                          style={styles.searchClearButton}
-                          onPress={clearSearch}
-                        >
-                          <Ionicons name="close" size={16} color="#6b7280" />
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
+                  <Text style={styles.cartTotal}>
+                    €{billingData?.totals.total_amount.toFixed(2) || '0.00'}
+                  </Text>
+                  <Text style={styles.cartItemCount}>Gesamt</Text>
+                </>
+              )}
+            </View>
+          </View>
 
-                  {/* Category Buttons */}
-                  <View style={styles.categoryContainer}>
-                    <ScrollView 
-                      horizontal 
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={styles.categoryScrollContent}
-                    >
-                      {processedCategories.map((category) => (
-                        <TouchableOpacity
-                          key={category.id}
-                          style={[
-                            styles.categoryButton,
-                            selectedCategory?.id === category.id && styles.categoryButtonActive
-                          ]}
-                          onPress={() => setSelectedCategory(category)}
-                        >
-                          <Text style={[
-                            styles.categoryButtonText,
-                            selectedCategory?.id === category.id && styles.categoryButtonTextActive
-                          ]}>
-                            {category.title}
+          {/* Tab Navigation */}
+          <View style={styles.tabNavigation}>
+            {hasPermission('show_order') && (
+              <TouchableOpacity
+                style={[
+                  styles.tabButton,
+                  activeTab === 'order' && styles.tabButtonActive
+                ]}
+                onPress={() => handleTabChange('order')}
+              >
+                <Ionicons 
+                  name={activeTab === 'order' ? "restaurant" : "restaurant-outline"} 
+                  size={20} 
+                  color={activeTab === 'order' ? "#ffffff" : "#6b7280"} 
+                />
+                <Text style={[
+                  styles.tabButtonText,
+                  activeTab === 'order' && styles.tabButtonTextActive
+                ]}>
+                  Bestellen
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {hasPermission('list_table_management') && (
+              <TouchableOpacity
+                style={[
+                  styles.tabButton,
+                  activeTab === 'billing' && styles.tabButtonActive
+                ]}
+                onPress={() => handleTabChange('billing')}
+              >
+                <Ionicons 
+                  name={activeTab === 'billing' ? "receipt" : "receipt-outline"} 
+                  size={20} 
+                  color={activeTab === 'billing' ? "#ffffff" : "#6b7280"} 
+                />
+                <Text style={[
+                  styles.tabButtonText,
+                  activeTab === 'billing' && styles.tabButtonTextActive
+                ]}>
+                  Bestellübersicht
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Tab Content */}
+          {activeTab === 'order' ? (
+            // BESTELLEN TAB
+            isLoadingMenu ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#007AFF" />
+                <Text style={styles.loadingText}>Lade Menü...</Text>
+              </View>
+            ) : (
+              <>
+                {/* Search Section */}
+                <View style={styles.searchSection}>
+                  <View style={styles.searchInputContainer}>
+                    <Ionicons name="search" size={16} color="#6b7280" style={styles.searchIcon} />
+                    <TextInput
+                      style={styles.searchInput}
+                      placeholder="Suchen..."
+                      value={searchQuery}
+                      onChangeText={handleSearchChange}
+                      onFocus={() => {
+                        if (searchQuery.length >= 2) {
+                          setIsSearchActive(true);
+                        }
+                      }}
+                    />
+                    {searchQuery.length > 0 && (
+                      <TouchableOpacity
+                        style={styles.searchClearButton}
+                        onPress={clearSearch}
+                      >
+                        <Ionicons name="close" size={16} color="#6b7280" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+
+                {/* Category Buttons */}
+                <View style={styles.categoryContainer}>
+                  <ScrollView 
+                    horizontal 
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.categoryScrollContent}
+                  >
+                    {processedCategories.map((category) => (
+                      <TouchableOpacity
+                        key={category.id}
+                        style={[
+                          styles.categoryButton,
+                          selectedCategory?.id === category.id && styles.categoryButtonActive
+                        ]}
+                        onPress={() => setSelectedCategory(category)}
+                      >
+                        <Text style={[
+                          styles.categoryButtonText,
+                          selectedCategory?.id === category.id && styles.categoryButtonTextActive
+                        ]}>
+                          {category.title}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+
+                {/* Items List */}
+                <View style={styles.itemsContainer}>
+                  {isSearchActive ? (
+                    // Search Results
+                    <FlatList
+                      data={searchResults}
+                      keyExtractor={(item) => item.uuid}
+                      ListHeaderComponent={() => (
+                        <View style={styles.searchResultsHeader}>
+                          <Text style={styles.searchResultsText}>
+                            {searchResults.length} Ergebnis{searchResults.length !== 1 ? 'se' : ''} für "{searchQuery}"
                           </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
+                        </View>
+                      )}
+                      ListEmptyComponent={() => (
+                        <View style={styles.emptySearchResults}>
+                          <Ionicons name="search-outline" size={48} color="#9ca3af" />
+                          <Text style={styles.emptySearchText}>
+                            Keine Ergebnisse für "{searchQuery}"
+                          </Text>
+                          <Text style={styles.emptySearchSubtext}>
+                            Versuchen Sie andere Suchbegriffe
+                          </Text>
+                        </View>
+                      )}
+                      renderItem={({ item }) => {
+                        const cartQuantity = cart
+                          .filter(cartItem => cartItem.uuid.startsWith(item.uuid))
+                          .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
+                        
+                        return (
+                          <View style={[
+                            styles.itemRow,
+                            cartQuantity > 0 && styles.itemRowSelected
+                          ]}>
+                            <TouchableOpacity
+                              style={styles.itemRowMainArea}
+                              onPress={() => addItemDirectly(item)}
+                            >
+                              <View style={styles.itemRowContent}>
+                                <View style={styles.itemRowInfo}>
+                                  <Text style={styles.itemRowTitle} numberOfLines={2}>
+                                    {item.title}
+                                  </Text>
+                                </View>
+                                
+                                <View style={styles.itemRowPrice}>
+                                  <Text style={styles.itemRowPriceText}>
+                                    {Number(item.price || 0).toFixed(2)} €
+                                  </Text>
+                                  
+                                  {cartQuantity > 0 && (
+                                    <View style={styles.itemRowQuantityBadge}>
+                                      <Text style={styles.itemRowQuantityText}>{cartQuantity}</Text>
+                                    </View>
+                                  )}
+                                </View>
+                              </View>
+                            </TouchableOpacity>
 
-                  {/* Items List */}
-                  <View style={styles.itemsContainer}>
-                    {isSearchActive ? (
-                      // Search Results
+                            <TouchableOpacity
+                              style={styles.itemRowConfigButton}
+                              onPress={() => openItemModal(item)}
+                            >
+                              <Ionicons name="create-outline" size={20} color="#ffffff" />
+                            </TouchableOpacity>
+                          </View>
+                        );
+                      }}
+                    />
+                  ) : (
+                    // Normal Category Items
+                    selectedCategory && (
                       <FlatList
-                        data={searchResults}
+                        data={selectedCategory.items}
                         keyExtractor={(item) => item.uuid}
-                        ListHeaderComponent={() => (
-                          <View style={styles.searchResultsHeader}>
-                            <Text style={styles.searchResultsText}>
-                              {searchResults.length} Ergebnis{searchResults.length !== 1 ? 'se' : ''} für "{searchQuery}"
-                            </Text>
-                          </View>
-                        )}
-                        ListEmptyComponent={() => (
-                          <View style={styles.emptySearchResults}>
-                            <Ionicons name="search-outline" size={48} color="#9ca3af" />
-                            <Text style={styles.emptySearchText}>
-                              Keine Ergebnisse für "{searchQuery}"
-                            </Text>
-                            <Text style={styles.emptySearchSubtext}>
-                              Versuchen Sie andere Suchbegriffe
-                            </Text>
-                          </View>
-                        )}
+                        contentContainerStyle={{ paddingBottom: 70 }}
                         renderItem={({ item }) => {
                           const cartQuantity = cart
                             .filter(cartItem => cartItem.uuid.startsWith(item.uuid))
                             .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
+                          const isUnavailable = item.sold_out || item.is_disabled;
                           
                           return (
                             <View style={[
                               styles.itemRow,
+                              isUnavailable && styles.itemRowDisabled,
                               cartQuantity > 0 && styles.itemRowSelected
                             ]}>
                               <TouchableOpacity
                                 style={styles.itemRowMainArea}
-                                onPress={() => addItemDirectly(item)}
+                                onPress={() => !isUnavailable && addItemDirectly(item)}
+                                disabled={isUnavailable}
                               >
                                 <View style={styles.itemRowContent}>
                                   <View style={styles.itemRowInfo}>
-                                    <Text style={styles.itemRowTitle} numberOfLines={2}>
+                                    <Text style={[
+                                      styles.itemRowTitle,
+                                      isUnavailable && styles.itemRowTitleDisabled
+                                    ]} numberOfLines={2}>
                                       {item.title}
                                     </Text>
                                   </View>
                                   
                                   <View style={styles.itemRowPrice}>
-                                    <Text style={styles.itemRowPriceText}>
+                                    <Text style={[
+                                      styles.itemRowPriceText,
+                                      isUnavailable && styles.itemRowPriceDisabled
+                                    ]}>
                                       {Number(item.price || 0).toFixed(2)} €
                                     </Text>
                                     
@@ -1443,153 +1415,90 @@ const animatedOverlayStyle = useAnimatedStyle(() => {
                               </TouchableOpacity>
 
                               <TouchableOpacity
-                                style={styles.itemRowConfigButton}
-                                onPress={() => openItemModal(item)}
+                                style={[
+                                  styles.itemRowConfigButton,
+                                  isUnavailable && styles.itemRowConfigButtonDisabled
+                                ]}
+                                onPress={() => !isUnavailable && openItemModal(item)}
+                                disabled={isUnavailable}
                               >
                                 <Ionicons name="create-outline" size={20} color="#ffffff" />
                               </TouchableOpacity>
+                              
+                              {isUnavailable && (
+                                <View style={styles.itemRowUnavailableBadge}>
+                                  <Text style={styles.itemRowUnavailableText}>
+                                    {item.sold_out ? 'Ausverkauft' : 'Nicht verfügbar'}
+                                  </Text>
+                                </View>
+                              )}
                             </View>
                           );
                         }}
                       />
-                    ) : (
-                      // Normal Category Items
-                      selectedCategory && (
-                        <FlatList
-                          data={selectedCategory.items}
-                          keyExtractor={(item) => item.uuid}
-                            contentContainerStyle={{ paddingBottom: 70 }} // DIESE ZEILE HINZUFÜGEN
+                    )
+                  )}
+                </View>
 
-                          renderItem={({ item }) => {
-                            const cartQuantity = cart
-                              .filter(cartItem => cartItem.uuid.startsWith(item.uuid))
-                              .reduce((sum, cartItem) => sum + cartItem.quantity, 0);
-                            const isUnavailable = item.sold_out || item.is_disabled;
-                            
-                            return (
-                              <View style={[
-                                styles.itemRow,
-                                isUnavailable && styles.itemRowDisabled,
-                                cartQuantity > 0 && styles.itemRowSelected
-                              ]}>
-                                <TouchableOpacity
-                                  style={styles.itemRowMainArea}
-                                  onPress={() => !isUnavailable && addItemDirectly(item)}
-                                  disabled={isUnavailable}
-                                >
-                                  <View style={styles.itemRowContent}>
-                                    <View style={styles.itemRowInfo}>
-                                      <Text style={[
-                                        styles.itemRowTitle,
-                                        isUnavailable && styles.itemRowTitleDisabled
-                                      ]} numberOfLines={2}>
-                                        {item.title}
-                                      </Text>
-                                    </View>
-                                    
-                                    <View style={styles.itemRowPrice}>
-                                      <Text style={[
-                                        styles.itemRowPriceText,
-                                        isUnavailable && styles.itemRowPriceDisabled
-                                      ]}>
-                                        {Number(item.price || 0).toFixed(2)} €
-                                      </Text>
-                                      
-                                      {cartQuantity > 0 && (
-                                        <View style={styles.itemRowQuantityBadge}>
-                                          <Text style={styles.itemRowQuantityText}>{cartQuantity}</Text>
-                                        </View>
-                                      )}
-                                    </View>
-                                  </View>
-                                </TouchableOpacity>
-
-                                <TouchableOpacity
-                                  style={[
-                                    styles.itemRowConfigButton,
-                                    isUnavailable && styles.itemRowConfigButtonDisabled
-                                  ]}
-                                  onPress={() => !isUnavailable && openItemModal(item)}
-                                  disabled={isUnavailable}
-                                >
-                                  <Ionicons name="create-outline" size={20} color="#ffffff" />
-                                </TouchableOpacity>
-                                
-                                {isUnavailable && (
-                                  <View style={styles.itemRowUnavailableBadge}>
-                                    <Text style={styles.itemRowUnavailableText}>
-                                      {item.sold_out ? 'Ausverkauft' : 'Nicht verfügbar'}
-                                    </Text>
-                                  </View>
-                                )}
-                              </View>
-                            );
-                          }}
-                        />
-                      )
-                    )}
-                  </View>
-
-                  {/* Warenkorb - Kompakter Header */}
-                  <View style={styles.cartSectionCompact}>
-                    <View style={styles.cartHeader}>
-                      <Text style={styles.cartHeaderTitle}>Warenkorb</Text>
-                      <View style={styles.cartHeaderActions}>
-                        <View style={styles.cartHeaderSummary}>
-                          <Text style={styles.cartHeaderTotal}>{getCartTotal().toFixed(2)} €</Text>
-                          <Text style={styles.cartHeaderCount}>({getCartItemCount()} Items)</Text>
-                        </View>
-                        
-                        <TouchableOpacity
-                          style={[
-                            styles.cartQuickOrderButton,
-                            cart.length === 0 && styles.disabledButton
-                          ]}
-                          onPress={submitOrder}
-                          disabled={cart.length === 0}
-                        >
-                          <Ionicons name="restaurant" size={16} color={cart.length === 0 ? "#9ca3af" : "#ffffff"} />
-                        </TouchableOpacity>
-                        
-                        <TouchableOpacity
-                          style={styles.cartExpandButton}
-                          onPress={() => setIsCartExpanded(true)}
-                        >
-                          <Ionicons name="chevron-up" size={20} color="#007AFF" />
-                        </TouchableOpacity>
-                        
-                        <TouchableOpacity
-                          style={styles.cartCloseButton}
-                          onPress={() => {
-                            if (cart.length > 0) {
-                              Alert.alert(
-                                'Warenkorb leeren',
-                                'Sind Sie sicher, dass Sie den Warenkorb leeren möchten?',
-                                [
-                                  { text: 'Abbrechen', style: 'cancel' },
-                                  { 
-                                    text: 'Leeren', 
-                                    style: 'destructive',
-                                    onPress: () => setCart([])
-                                  }
-                                ]
-                              );
-                            }
-                          }}
-                        >
-                          <Ionicons name="close" size={20} color="#ef4444" />
-                        </TouchableOpacity>
+                {/* Warenkorb - Kompakter Header */}
+                <View style={styles.cartSectionCompact}>
+                  <View style={styles.cartHeader}>
+                    <Text style={styles.cartHeaderTitle}>Warenkorb</Text>
+                    <View style={styles.cartHeaderActions}>
+                      <View style={styles.cartHeaderSummary}>
+                        <Text style={styles.cartHeaderTotal}>{getCartTotal().toFixed(2)} €</Text>
+                        <Text style={styles.cartHeaderCount}>({getCartItemCount()} Items)</Text>
                       </View>
+                      
+                      <TouchableOpacity
+                        style={[
+                          styles.cartQuickOrderButton,
+                          cart.length === 0 && styles.disabledButton
+                        ]}
+                        onPress={submitOrder}
+                        disabled={cart.length === 0}
+                      >
+                        <Ionicons name="restaurant" size={16} color={cart.length === 0 ? "#9ca3af" : "#ffffff"} />
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity
+                        style={styles.cartExpandButton}
+                        onPress={() => setIsCartExpanded(true)}
+                      >
+                        <Ionicons name="chevron-up" size={20} color="#007AFF" />
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity
+                        style={styles.cartCloseButton}
+                        onPress={() => {
+                          if (cart.length > 0) {
+                            Alert.alert(
+                              'Warenkorb leeren',
+                              'Sind Sie sicher, dass Sie den Warenkorb leeren möchten?',
+                              [
+                                { text: 'Abbrechen', style: 'cancel' },
+                                { 
+                                  text: 'Leeren', 
+                                  style: 'destructive',
+                                  onPress: () => setCart([])
+                                }
+                              ]
+                            );
+                          }
+                        }}
+                      >
+                        <Ionicons name="close" size={20} color="#ef4444" />
+                      </TouchableOpacity>
                     </View>
                   </View>
-                </>
-              )
-            ) : (
-              // RECHNUNG TAB
-              renderBillingInterface()
-            )}
-          </Animated.View>
-        </PanGestureHandler>
+                </View>
+              </>
+            )
+          ) : (
+            // RECHNUNG TAB
+            renderBillingInterface()
+          )}
+        </View>
 
         {/* Cart Modal - Vollständiger Warenkorb Modal */}
         <Modal
@@ -1684,14 +1593,6 @@ const animatedOverlayStyle = useAnimatedStyle(() => {
                             
                             {/* Edit und Remove Buttons */}
                             <View style={styles.expandedCartItemActions}>
-                             { /* Edit Button ist hier auskommentiert, da es im Moment bisschen Buggy ist
-                              <TouchableOpacity
-                                style={styles.expandedCartItemEdit}
-                                onPress={() => openEditModal(item)}
-                              >
-                                <Ionicons name="create-outline" size={20} color="#007AFF" />
-                              </TouchableOpacity>
-                                */}
                               <TouchableOpacity
                                 style={styles.expandedCartItemRemove}
                                 onPress={() => {
@@ -1782,8 +1683,7 @@ const animatedOverlayStyle = useAnimatedStyle(() => {
                     <View style={styles.modalHeader}>
                       <View style={styles.modalHeaderLeft}>
                         <Text style={styles.modalHeaderTitle}>
-                          {isEditingCartItem ? "Item bearbeiten" : "Item hinzufügen"}
-                        </Text>
+{isEditingCartItem ? "Item bearbeiten" : "Item hinzufügen"}                        </Text>
                       </View>
                       <TouchableOpacity
                         style={styles.modalCloseButton}
@@ -2088,4 +1988,3 @@ const animatedOverlayStyle = useAnimatedStyle(() => {
     </SafeAreaView>
   );
 }
-

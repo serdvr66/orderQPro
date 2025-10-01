@@ -333,11 +333,11 @@ export default function RootLayout() {
         console.log("Notification Tapped: User tapped notification");
       });
 
-    // Cleanup
-    return () => {
-      Notifications.removeNotificationSubscription(notificationListener);
-      Notifications.removeNotificationSubscription(responseListener);
-    };
+   // CORRECT:
+return () => {
+  notificationListener.remove();
+  responseListener.remove();
+};
   }, []);
 
   return (
