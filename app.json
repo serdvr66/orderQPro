@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "OrderQ Pro",
+    "name": "orderQ Pro",
     "slug": "orderq-pro",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -58,10 +58,11 @@
     "experiments": {
       "typedRoutes": true
     },
+    "owner": "roberrr02",
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "b1c828e2-9d93-4a09-ad69-b31e8f9b940a"
+        "projectId": "3c4649a1-bbe0-4c91-b0e4-3e42e34b42c7"
       }
     }
   }
