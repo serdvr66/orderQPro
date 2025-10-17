@@ -387,46 +387,63 @@ export default function IndexScreen() {
     }
   };
 
-  // Item stornieren - Verbesserte UX
-  const cancelItem = async (orderItem: OrderItem) => {
-    const actionKey = `cancel-${orderItem.uuid}`;
-    
-    try {
-      console.log('❌ Storniere Item:', orderItem.id);
-      
-      // Action als pending markieren
-      setPendingActions(prev => new Set(prev).add(actionKey));
-      
-      // Optimistisches Update - entferne Item aus UI
-      setOrders(prevOrders => 
-        prevOrders.map(order => ({
-          ...order,
-          order_items: order.order_items.filter(item => item.uuid !== orderItem.uuid)
-        })).filter(order => order.order_items.length > 0)
-      );
+  // Item stornieren - Mit Bestätigungsabfrage
+const cancelItem = async (orderItem: OrderItem) => {
+  // Zeige Bestätigungsabfrage
+  Alert.alert(
+    'Item stornieren',
+    `Möchten Sie "${orderItem.item.title}" wirklich stornieren?\n\nDiese Aktion kann nicht rückgängig gemacht werden.`,
+    [
+      {
+        text: 'Abbrechen',
+        style: 'cancel',
+      },
+      {
+        text: 'Stornieren',
+        style: 'destructive',
+        onPress: async () => {
+          const actionKey = `cancel-${orderItem.uuid}`;
+          
+          try {
+            console.log('❌ Storniere Item:', orderItem.id);
+            
+            // Action als pending markieren
+            setPendingActions(prev => new Set(prev).add(actionKey));
+            
+            // Optimistisches Update - entferne Item aus UI
+            setOrders(prevOrders => 
+              prevOrders.map(order => ({
+                ...order,
+                order_items: order.order_items.filter(item => item.uuid !== orderItem.uuid)
+              })).filter(order => order.order_items.length > 0)
+            );
 
-      // Echter API-Call mit ID
-      await cancelOrderItem(orderItem.id);
-      console.log('✅ Item erfolgreich storniert');
-      
-      // Nach erfolgreichem API-Call aktuelle Daten laden
-      setTimeout(() => {
-        handleLoadOrders();
-      }, 500);
-      
-    } catch (error) {
-      console.error('❌ Fehler beim Stornieren:', error);
-      // Rollback bei Fehler
-      handleLoadOrders();
-    } finally {
-      // Action als abgeschlossen markieren
-      setPendingActions(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(actionKey);
-        return newSet;
-      });
-    }
-  };
+            // Echter API-Call mit ID
+            await cancelOrderItem(orderItem.id);
+            console.log('✅ Item erfolgreich storniert');
+            
+            // Nach erfolgreichem API-Call aktuelle Daten laden
+            setTimeout(() => {
+              handleLoadOrders();
+            }, 500);
+            
+          } catch (error) {
+            console.error('❌ Fehler beim Stornieren:', error);
+            // Rollback bei Fehler
+            handleLoadOrders();
+          } finally {
+            // Action als abgeschlossen markieren
+            setPendingActions(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(actionKey);
+              return newSet;
+            });
+          }
+        }
+      }
+    ]
+  );
+};
 
   // Bestellung abschließen
   const completeOrder = async (order: Order) => {

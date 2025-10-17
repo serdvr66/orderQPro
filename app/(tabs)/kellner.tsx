@@ -457,32 +457,46 @@ export default function KellnerScreen() {
   };
 
   const processMenuCategories = (categories: MenuCategory[]): MenuCategory[] => {
-    const processed: MenuCategory[] = [];
-    
-    categories.forEach(category => {
-      if (!category.is_enabled) return;
+  const processed: MenuCategory[] = [];
+  
+  // Rekursive Funktion für alle Kategorie-Ebenen
+  const processCategory = (category: MenuCategory) => {
+    // Kategorie nur hinzufügen wenn sie Items hat
+    if (category.items && category.items.length > 0) {
+      const enabledItems = category.items
+        .filter(item => item.is_enabled && !item.is_disabled)
       
-      if (category.items && category.items.length > 0) {
+      if (enabledItems.length > 0) {
         processed.push({
           ...category,
-          items: category.items.filter(item => item.is_enabled && !item.is_disabled)
+          items: enabledItems
         });
       }
-      
-      if (category.subcategories && category.subcategories.length > 0) {
-        category.subcategories.forEach(subcat => {
-          if (subcat.is_enabled && subcat.items && subcat.items.length > 0) {
-            processed.push({
-              ...subcat,
-              items: subcat.items.filter(item => item.is_enabled && !item.is_disabled)
-            });
-          }
-        });
-      }
-    });
+    }
     
-    return processed.sort((a, b) => (a.order || 0) - (b.order || 0));
+    // Rekursiv alle Unterkategorien verarbeiten
+    if (category.subcategories && category.subcategories.length > 0) {
+      const sortedSubcategories = [...category.subcategories]
+        .filter(subcat => subcat.is_enabled)
+        .sort((a, b) => (a.order || 0) - (b.order || 0));
+      
+      sortedSubcategories.forEach(subcat => {
+        processCategory(subcat); // ← REKURSIVER AUFRUF
+      });
+    }
   };
+  
+  // Hauptkategorien verarbeiten
+  const enabledMainCategories = categories
+    .filter(cat => cat.is_enabled)
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+  
+  enabledMainCategories.forEach(category => {
+    processCategory(category);
+  });
+  
+  return processed;
+};
 
   const openEditModal = (cartItem: CartItem) => {
     setIsCartExpanded(false);

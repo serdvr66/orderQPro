@@ -334,14 +334,13 @@ export const styles = StyleSheet.create({
 
 cartSectionCompact: {
   position: 'absolute',
-  bottom: -40,
+  bottom: 0,
   left: 0,
   right: 0,
   backgroundColor: '#f1f5f9',
   borderTopWidth: 2,
   borderTopColor: '#d1d5db',
-  zIndex: 10,
-   paddingBottom: 5,
+  paddingBottom: 5,
 },
 
 cartExpandButton: {
@@ -1497,6 +1496,21 @@ padding: 16,
     fontWeight: '600',
     marginLeft: 10,
   },
+outerContainer: {
+  flex: 1,
+  backgroundColor: '#f9fafb',
+},
 
+cartSectionFixed: {
+  position: 'absolute',
+  bottom: 0,
+  left: 0,
+  right: 0,
+  backgroundColor: '#f1f5f9',
+  borderTopWidth: 2,
+  borderTopColor: '#d1d5db',
+  paddingTop: 10,
+  paddingBottom: 35,
+},
 
     });
